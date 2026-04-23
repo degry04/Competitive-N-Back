@@ -39,6 +39,10 @@ npm run db:generate
 npm run db:migrate
 npm run dev
 ```
+```bash
+npm run build 
+npm start
+```
 
 Тесты:
 
