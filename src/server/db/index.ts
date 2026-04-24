@@ -6,14 +6,20 @@ import * as schema from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL ?? "file:./data/nback.sqlite";
 const databasePath = resolve(databaseUrl.replace(/^file:/, ""));
+const isBuildPhase =
+  process.env.NEXT_PHASE === "phase-production-build" || process.env.npm_lifecycle_event === "build";
 
-mkdirSync(dirname(databasePath), { recursive: true });
+if (!isBuildPhase) {
+  mkdirSync(dirname(databasePath), { recursive: true });
+}
 
 const sqlite = createClient({
   url: databaseUrl.startsWith("file:") ? databaseUrl : `file:${databasePath}`
 });
 
-await ensureLocalSchema(sqlite);
+if (!isBuildPhase) {
+  await ensureLocalSchema(sqlite);
+}
 
 export const db = drizzle(sqlite, { schema });
 
