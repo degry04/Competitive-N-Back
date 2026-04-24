@@ -118,4 +118,47 @@ export const ratingHistory = sqliteTable("rating_history", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull()
 });
 
+export const chatRooms = sqliteTable("chat_rooms", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  type: text("type", { enum: ["global", "room", "direct"] }).notNull().default("room"),
+  ownerId: text("owner_id").references(() => user.id, { onDelete: "set null" }),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+});
+
+export const chatMembers = sqliteTable("chat_members", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => chatRooms.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  joinedAt: integer("joined_at", { mode: "timestamp" }).notNull()
+});
+
+export const chatMessages = sqliteTable("chat_messages", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => chatRooms.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+});
+
+export const friendships = sqliteTable("friendships", {
+  id: text("id").primaryKey(),
+  requesterId: text("requester_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  addresseeId: text("addressee_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  status: text("status", { enum: ["accepted"] }).notNull().default("accepted"),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+});
+
 export type RoundStatus = typeof rounds.$inferSelect.status;

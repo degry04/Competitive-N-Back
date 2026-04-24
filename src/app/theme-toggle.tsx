@@ -1,12 +1,12 @@
 "use client";
 
-import { Moon, Sun, Sparkles } from "lucide-react";
+import { Moon, Sparkles, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type ThemeName = "dark" | "light" | "lunar";
 
 const THEMES: Array<{ id: ThemeName; label: string; icon: typeof Moon }> = [
-  { id: "dark", label: "Тёмная", icon: Moon },
+  { id: "dark", label: "Темная", icon: Moon },
   { id: "light", label: "Светлая", icon: Sun },
   { id: "lunar", label: "Лунная", icon: Sparkles }
 ];

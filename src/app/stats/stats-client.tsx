@@ -55,7 +55,7 @@ export default function StatsClient() {
               <div className="history-head">
                 <strong>{myRating.data.name}</strong>
                 <span>
-                  {myRating.data.rank} · {myRating.data.rating} ELO
+                  {rankLabel(myRating.data.rank)} · {myRating.data.rating} ELO
                 </span>
               </div>
               <p className="notice">Рейтинг обновляется только после завершения рейтингового матча.</p>
@@ -87,7 +87,7 @@ export default function StatsClient() {
         <div className="history-panel">
           <div className="panel-title">
             <Trophy size={18} />
-            <h2>Лидерборд</h2>
+            <h2>Таблица лидеров</h2>
           </div>
           {leaderboard.data?.length ? (
             <div className="history-block">
@@ -103,7 +103,7 @@ export default function StatsClient() {
               </div>
             </div>
           ) : (
-            <p className="notice">Лидерборд пока пуст.</p>
+            <p className="notice">Таблица лидеров пока пуста.</p>
           )}
         </div>
       </section>
@@ -137,8 +137,27 @@ function LeaderboardRow({
       <span>{entry.place}</span>
       <span>{entry.name}</span>
       <span>{entry.rating}</span>
-      <span>{entry.rank}</span>
+      <span>{rankLabel(entry.rank)}</span>
       <span>{entry.id.slice(0, 8)}</span>
     </>
   );
+}
+
+function rankLabel(rank: string) {
+  switch (rank) {
+    case "Bronze":
+      return "Бронза";
+    case "Silver":
+      return "Серебро";
+    case "Gold":
+      return "Золото";
+    case "Platinum":
+      return "Платина";
+    case "Diamond":
+      return "Алмаз";
+    case "Master":
+      return "Мастер";
+    default:
+      return rank;
+  }
 }

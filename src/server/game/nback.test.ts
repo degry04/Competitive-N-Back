@@ -43,13 +43,13 @@ describe("competitive trainer business rules", () => {
   it("requires 2 players and supports no more than 4 players", () => {
     const round = makeRound();
 
-    expect(() => startRound(round, 0)).toThrow("At least 2 players");
+    expect(() => startRound(round, 0)).toThrow("минимум 2 игрока");
 
     joinRound(round, "player-2", "Grace");
     joinRound(round, "player-3", "Linus");
     joinRound(round, "player-4", "Margaret");
 
-    expect(() => joinRound(round, "player-5", "Barbara")).toThrow("up to 4 players");
+    expect(() => joinRound(round, "player-5", "Barbara")).toThrow("до 4 игроков");
   });
 
   it("applies penalty on wrong n-back click", () => {

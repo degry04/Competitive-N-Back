@@ -7,7 +7,7 @@ export default function HomePage() {
     <main className="shell">
       <header className="topbar">
         <div>
-          <h1>Cognitive Arena</h1>
+          <h1>Когнитивная арена</h1>
           <p>Соревновательные когнитивные тренажеры для 2-4 игроков</p>
         </div>
         <div className="metrics">

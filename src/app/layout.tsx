@@ -3,8 +3,8 @@ import { TRPCProvider } from "@/trpc/provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Competitive N-back",
-  description: "Соревновательный N-back с влиянием ошибок"
+  title: "Когнитивная арена",
+  description: "Соревновательные когнитивные тренажеры с влиянием ошибок"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

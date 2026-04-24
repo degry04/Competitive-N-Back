@@ -145,7 +145,7 @@ const STROOP_COLORS: StroopColor[] = ["red", "blue", "green", "yellow"];
 
 export function generateSequence(length: number, randomInt = (max: number) => Math.floor(Math.random() * max)) {
   if (length < 1) {
-    throw new Error("Sequence length must be positive.");
+    throw new Error("Длина последовательности должна быть положительной.");
   }
 
   return Array.from({ length }, () => randomInt(GRID_CELLS)).map((position) => ({
@@ -169,18 +169,18 @@ export function createRound(params: {
   stimuli?: Stimulus[];
 }): GameRound {
   if (![2, 3, 4].includes(params.n)) {
-    throw new Error("N must be 2, 3, or 4.");
+    throw new Error("N должно быть равно 2, 3 или 4.");
   }
   if (params.length <= 0) {
-    throw new Error("Round length must be positive.");
+    throw new Error("Длина раунда должна быть положительной.");
   }
   if (params.baseIntervalMs < MIN_INTERVAL_MS) {
-    throw new Error(`Base interval must be at least ${MIN_INTERVAL_MS} ms.`);
+    throw new Error(`Базовый интервал должен быть не меньше ${MIN_INTERVAL_MS} мс.`);
   }
 
   const goRatio = params.goRatio ?? 0.7;
   if (goRatio <= 0 || goRatio >= 1) {
-    throw new Error("GO ratio must be between 0 and 1.");
+    throw new Error("Доля стимулов «Действуй» должна быть между 0 и 1.");
   }
 
   const stimuli = params.stimuli ?? generateStimuli(params.mode, params.length, goRatio);
@@ -189,7 +189,7 @@ export function createRound(params: {
   if (params.botAccuracy !== undefined && params.botAccuracy !== null) {
     players.set(
       `bot:${params.id}`,
-      createPlayer(`bot:${params.id}`, `Bot ${Math.round(params.botAccuracy * 100)}%`, true, params.botAccuracy)
+      createPlayer(`bot:${params.id}`, `Бот ${Math.round(params.botAccuracy * 100)}%`, true, params.botAccuracy)
     );
   }
 
@@ -216,13 +216,13 @@ export function createRound(params: {
 
 export function joinRound(round: GameRound, userId: string, displayName: string, isBot = false, botAccuracy?: number) {
   if (round.status !== "lobby") {
-    throw new Error("You can only join a round in lobby.");
+    throw new Error("Войти в раунд можно только из лобби.");
   }
   if (round.players.has(userId)) {
     return;
   }
   if (round.players.size >= 4) {
-    throw new Error("A round supports up to 4 players.");
+    throw new Error("Раунд поддерживает до 4 игроков.");
   }
 
   round.players.set(userId, createPlayer(userId, displayName, isBot, botAccuracy));
@@ -257,10 +257,10 @@ function createPlayer(userId: string, displayName: string, isBot = false, botAcc
 
 export function startRound(round: GameRound, now = Date.now()) {
   if (round.status !== "lobby") {
-    throw new Error("Round is not in lobby.");
+    throw new Error("Раунд сейчас не в лобби.");
   }
   if (round.players.size < 2) {
-    throw new Error("At least 2 players are required.");
+    throw new Error("Нужно минимум 2 игрока.");
   }
 
   round.status = "running";
@@ -376,13 +376,13 @@ export function submitMatch(round: GameRound, userId: string, answer?: string, n
 
   const player = round.players.get(userId);
   if (!player) {
-    throw new Error("Player is not in round.");
+    throw new Error("Игрок не участвует в раунде.");
   }
 
   const stimulusIndex = round.currentStimulusIndex;
   const stimulus = round.stimuli[stimulusIndex];
   if (!stimulus) {
-    throw new Error("Stimulus not found.");
+    throw new Error("Стимул не найден.");
   }
   if (player.answeredStimuli.has(stimulusIndex)) {
     return {
@@ -443,7 +443,7 @@ export function submitMatch(round: GameRound, userId: string, answer?: string, n
     }
     case "go-no-go": {
       if (stimulus.kind !== "go-no-go") {
-        throw new Error("Invalid stimulus for Go/No-Go.");
+        throw new Error("Неверный стимул для режима «Действуй / не действуй».");
       }
       reactionTime = round.currentStimulusVisibleAt ? now - round.currentStimulusVisibleAt : null;
       isCorrect = validateGoNoGoResponse(stimulus, true);
@@ -470,7 +470,7 @@ export function submitMatch(round: GameRound, userId: string, answer?: string, n
     }
     case "reaction-time": {
       if (stimulus.kind !== "reaction-time") {
-        throw new Error("Invalid stimulus for reaction test.");
+        throw new Error("Неверный стимул для режима «Скорость реакции».");
       }
       const validation = validateReactionResponse(round.currentStimulusVisibleAt ?? now, now);
       falseStart = validation.falseStart;
@@ -497,11 +497,11 @@ export function submitMatch(round: GameRound, userId: string, answer?: string, n
     }
     case "stroop": {
       if (stimulus.kind !== "stroop") {
-        throw new Error("Invalid stimulus for Stroop.");
+        throw new Error("Неверный стимул для теста Струпа.");
       }
       const normalizedAnswer = (answer ?? "").trim().toLowerCase();
       if (!normalizedAnswer) {
-        throw new Error("Answer is required for Stroop mode.");
+        throw new Error("Для теста Струпа нужен ответ.");
       }
       reactionTime = round.currentStimulusVisibleAt ? now - round.currentStimulusVisibleAt : null;
       isCorrect = validateStroopResponse(stimulus, normalizedAnswer);

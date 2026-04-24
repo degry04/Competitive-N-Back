@@ -27,7 +27,7 @@ export const statsRouter = router({
         .limit(1);
 
       if (!profile) {
-        throw new Error("User not found.");
+        throw new Error("Пользователь не найден.");
       }
 
       const history = await db

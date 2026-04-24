@@ -260,6 +260,186 @@ input[type="range"] {
   margin-bottom: 12px;
 }
 
+.social-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #15191f;
+}
+
+.profile-card,
+.message,
+.friend-row,
+.chat-head,
+.social-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.profile-card {
+  min-width: 0;
+}
+
+.profile-card div {
+  display: grid;
+  min-width: 0;
+}
+
+.profile-card span,
+.social-block-head,
+.chat-head,
+.message strong {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.avatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--panel-2);
+  font-weight: 800;
+  object-fit: cover;
+}
+
+.avatar.small {
+  width: 28px;
+  height: 28px;
+  font-size: 12px;
+}
+
+.compact-form,
+.chat-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.icon-only {
+  width: 42px;
+  padding: 0;
+}
+
+.social-block {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.room-list,
+.friend-list {
+  display: grid;
+  gap: 6px;
+}
+
+.room-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.room-chip.active {
+  border-color: var(--accent);
+}
+
+.room-chip.muted {
+  color: var(--muted);
+}
+
+.chat-box {
+  display: grid;
+  gap: 8px;
+}
+
+.chat-head {
+  justify-content: space-between;
+}
+
+.messages {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-height: 180px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: #111419;
+}
+
+.message {
+  align-items: flex-start;
+}
+
+.message.mine {
+  justify-content: flex-end;
+}
+
+.message div {
+  display: grid;
+  gap: 2px;
+  max-width: 210px;
+}
+
+.message p {
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--panel-2);
+  overflow-wrap: anywhere;
+}
+
+.message.mine p {
+  background: rgba(66, 211, 146, 0.18);
+}
+
+.emoji-row {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.emoji-button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+
+.friend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.friend-name {
+  min-width: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wide {
   width: 100%;
 }

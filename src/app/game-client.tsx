@@ -22,6 +22,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createAuthClient } from "better-auth/react";
+import SocialPanel from "./social-panel";
 import { trpc } from "@/trpc/client";
 
 const authClient = createAuthClient();
@@ -66,6 +67,13 @@ const STROOP_BUTTONS: Array<{ value: StroopColor; label: string }> = [
   { value: "green", label: "Зеленый" },
   { value: "yellow", label: "Желтый" }
 ];
+
+const STROOP_COLOR_LABELS: Record<StroopColor, string> = {
+  red: "КРАСНЫЙ",
+  blue: "СИНИЙ",
+  green: "ЗЕЛЕНЫЙ",
+  yellow: "ЖЕЛТЫЙ"
+};
 
 export default function GameClient() {
   const { data: session, refetch: refetchSession } = authClient.useSession();
@@ -327,7 +335,7 @@ export default function GameClient() {
             <HelpCircle size={18} /> Руководство
           </Link>
           <Link className="secondary link-button" href="/stats">
-            <Shield size={18} /> Rating
+            <Shield size={18} /> Рейтинг
           </Link>
           <Link className="secondary link-button" href="/history">
             <History size={18} /> История
@@ -337,15 +345,17 @@ export default function GameClient() {
           </button>
         </div>
 
+        <SocialPanel />
+
         <div className="settings-panel">
           <label>
             Тренажер
             <select value={mode} onChange={(event) => setMode(event.target.value as GameMode)}>
-              <option value="classic">N-back</option>
-              <option value="recent-5">Recent-5</option>
-              <option value="go-no-go">Go / No-Go</option>
-              <option value="reaction-time">Reaction Time</option>
-              <option value="stroop">Stroop Test</option>
+              <option value="classic">N-назад</option>
+              <option value="recent-5">Последние 5</option>
+              <option value="go-no-go">Действуй / не действуй</option>
+              <option value="reaction-time">Скорость реакции</option>
+              <option value="stroop">Тест Струпа</option>
             </select>
           </label>
 
@@ -362,7 +372,7 @@ export default function GameClient() {
 
           {mode === "go-no-go" && (
             <label>
-              Доля GO стимулов: {goRatio}%
+              Доля стимулов «Действуй»: {goRatio}%
               <input max={90} min={40} onChange={(event) => setGoRatio(Number(event.target.value))} step={5} type="range" value={goRatio} />
             </label>
           )}
@@ -396,10 +406,10 @@ export default function GameClient() {
 
           <label className="check-row">
             <input checked={rated} onChange={(event) => setRated(event.target.checked)} type="checkbox" />
-            Rated lobby
+            Рейтинговое лобби
           </label>
 
-          {rated && <p className="field-hint">ELO changes after each finished game. Bots are disabled in rated matches.</p>}
+          {rated && <p className="field-hint">ELO меняется после каждой завершенной игры. В рейтинговых матчах боты отключены.</p>}
 
           {useBot && (
             <label>
@@ -425,10 +435,10 @@ export default function GameClient() {
             <HelpCircle size={18} />
             <h2>Как играть</h2>
           </div>
-          <p>N-back: нажимайте, если текущая клетка совпала с клеткой N ходов назад.</p>
-          <p>Go / No-Go: нажимайте только на GO, NO_GO нужно пропускать.</p>
-          <p>Reaction Time: ждите сигнала и кликайте как можно быстрее, фальстарт штрафуется.</p>
-          <p>Stroop: отвечайте по цвету слова, а не по его тексту.</p>
+          <p>N-назад: нажимайте, если текущая клетка совпала с клеткой N ходов назад.</p>
+          <p>Действуй / не действуй: нажимайте только на «Действуй», «Не действуй» нужно пропускать.</p>
+          <p>Скорость реакции: ждите сигнала и кликайте как можно быстрее, фальстарт штрафуется.</p>
+          <p>Тест Струпа: отвечайте по цвету слова, а не по его тексту.</p>
           <p>Подробное руководство доступно на отдельной странице.</p>
         </div>
 
@@ -458,7 +468,7 @@ export default function GameClient() {
               <History size={18} /> Открыть историю
             </Link>
             <Link className="secondary link-button wide" href="/stats">
-              <Shield size={18} /> Rating
+              <Shield size={18} /> Рейтинг
             </Link>
           </div>
         </section>
@@ -477,7 +487,7 @@ export default function GameClient() {
                 <p>{activeRound.tournament ? "Турнирный формат." : "Обычный матч."}</p>
                 <p>{currentPlayer ? `Вы участвуете как ${currentPlayer.displayName}` : "Вы смотрите раунд, но еще не участвуете"}</p>
               </div>
-              <p>{activeRound.rated ? "Rated match: ELO will change after the game." : "Casual match: ELO does not change."}</p>
+              <p>{activeRound.rated ? "Рейтинговый матч: ELO изменится после игры." : "Обычный матч: ELO не изменится."}</p>
               <div className="button-row">
                 {activeRound.status === "lobby" && !currentPlayer && (
                   <button className="secondary" onClick={() => joinRound.mutate({ roundId: activeRound.id })}>
@@ -554,13 +564,13 @@ export default function GameClient() {
                   <span>Очки: {player.correct}</span>
                   <span>Ошибки: {player.errors}</span>
                   <span>Штраф: {player.penalty}</span>
-                  <span>Accuracy: {player.metrics.accuracy}%</span>
-                  {player.metrics.averageReactionTime !== null && <span>Avg RT: {player.metrics.averageReactionTime} мс</span>}
-                  {player.metrics.bestReactionTime !== null && <span>Best RT: {player.metrics.bestReactionTime} мс</span>}
+                  <span>Точность: {player.metrics.accuracy}%</span>
+                  {player.metrics.averageReactionTime !== null && <span>Средняя реакция: {player.metrics.averageReactionTime} мс</span>}
+                  {player.metrics.bestReactionTime !== null && <span>Лучшая реакция: {player.metrics.bestReactionTime} мс</span>}
                   {player.metrics.falseStarts > 0 && <span>Фальстарты: {player.metrics.falseStarts}</span>}
-                  {player.metrics.falsePositives > 0 && <span>False positives: {player.metrics.falsePositives}</span>}
-                  {player.metrics.misses > 0 && <span>Misses: {player.metrics.misses}</span>}
-                  {player.metrics.conflictErrors > 0 && <span>Conflict errors: {player.metrics.conflictErrors}</span>}
+                  {player.metrics.falsePositives > 0 && <span>Ложные нажатия: {player.metrics.falsePositives}</span>}
+                  {player.metrics.misses > 0 && <span>Пропуски: {player.metrics.misses}</span>}
+                  {player.metrics.conflictErrors > 0 && <span>Ошибки конфликта: {player.metrics.conflictErrors}</span>}
                 </div>
               ))}
             </div>
@@ -634,11 +644,12 @@ function GameArena({
   }
 
   if (stimulus.kind === "go-no-go") {
+    const isGo = stimulus.type === "GO";
     return (
-      <div className={`stimulus-card ${stimulus.type === "GO" ? "go-card" : "nogo-card"}`}>
+      <div className={`stimulus-card ${isGo ? "go-card" : "nogo-card"}`}>
         <TrafficCone size={28} />
-        <strong>{stimulus.type}</strong>
-        <span>{stimulus.type === "GO" ? "Нужно нажать" : "Нужно пропустить"}</span>
+        <strong>{isGo ? "ДЕЙСТВУЙ" : "НЕ ДЕЙСТВУЙ"}</strong>
+        <span>{isGo ? "Нужно нажать" : "Нужно пропустить"}</span>
       </div>
     );
   }
@@ -656,7 +667,7 @@ function GameArena({
   return (
     <div className="stimulus-card stroop-card">
       <WholeWord size={28} />
-      <strong className={`stroop-word stroop-${stimulus.color}`}>{stimulus.word.toUpperCase()}</strong>
+      <strong className={`stroop-word stroop-${stimulus.color}`}>{STROOP_COLOR_LABELS[stimulus.word]}</strong>
       <span>{stimulus.congruent ? "Конгруэнтный стимул" : "Конфликтный стимул"}</span>
     </div>
   );
@@ -694,15 +705,15 @@ function renderControls(
 function modeLabel(mode: GameMode, n: number) {
   switch (mode) {
     case "classic":
-      return `${n}-back`;
+      return `${n}-назад`;
     case "recent-5":
-      return "Recent-5";
+      return "Последние 5";
     case "go-no-go":
-      return "Go / No-Go";
+      return "Действуй / не действуй";
     case "reaction-time":
-      return "Reaction Time";
+      return "Скорость реакции";
     case "stroop":
-      return "Stroop Test";
+      return "Тест Струпа";
   }
 }
 
@@ -809,7 +820,7 @@ function FragmentRow({
 }) {
   return (
     <>
-      <span>{player.isBot ? `Bot · ${player.displayName}` : player.displayName}</span>
+      <span>{player.isBot ? `Бот · ${player.displayName}` : player.displayName}</span>
       <span>{player.correct}</span>
       <span>{player.errors}</span>
       <span>{player.penalty}</span>

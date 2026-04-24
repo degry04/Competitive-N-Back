@@ -15,7 +15,7 @@ import {
 import { protectedProcedure, router } from "../trpc";
 
 function userName(user: { name?: string | null; email?: string | null }) {
-  return user.name?.trim() || user.email?.split("@")[0] || "Player";
+  return user.name?.trim() || user.email?.split("@")[0] || "Игрок";
 }
 
 async function unwrapGameAction<T>(action: () => Promise<T>) {
@@ -24,7 +24,7 @@ async function unwrapGameAction<T>(action: () => Promise<T>) {
   } catch (error) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: error instanceof Error ? error.message : "Game action failed."
+      message: error instanceof Error ? error.message : "Не удалось выполнить игровое действие."
     });
   }
 }
@@ -55,7 +55,7 @@ export const gameRouter = router({
       if (input.rated && input.botAccuracy !== null) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: "Rated lobbies do not allow bots."
+          message: "В рейтинговых лобби нельзя добавлять ботов."
         });
       }
 
