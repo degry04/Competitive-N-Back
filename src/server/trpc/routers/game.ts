@@ -42,22 +42,31 @@ export const gameRouter = router({
     .input(
       z.object({
         n: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(2),
-        mode: z.enum(["classic", "recent-5"]).default("classic"),
+        mode: z.enum(["classic", "recent-5", "go-no-go", "reaction-time", "stroop"]).default("classic"),
         tournament: z.boolean().default(false),
+        rated: z.boolean().default(false),
         length: z.number().int().min(12).max(120).default(30),
         baseIntervalMs: z.number().int().min(450).max(4000).default(1600),
+        goRatio: z.number().min(0.4).max(0.9).default(0.7),
         botAccuracy: z.number().min(0.1).max(0.99).nullable().default(null)
       })
     )
-    .mutation(({ ctx, input }) =>
-      unwrapGameAction(() =>
+    .mutation(({ ctx, input }) => {
+      if (input.rated && input.botAccuracy !== null) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Rated lobbies do not allow bots."
+        });
+      }
+
+      return unwrapGameAction(() =>
         createGameRound({
           ownerId: ctx.session.user.id,
           ownerName: userName(ctx.session.user),
           ...input
         })
-      )
-    ),
+      );
+    }),
 
   join: protectedProcedure.input(z.object({ roundId: z.string().uuid() })).mutation(({ ctx, input }) =>
     unwrapGameAction(() => joinGameRound(input.roundId, ctx.session.user.id, userName(ctx.session.user)))
@@ -67,9 +76,23 @@ export const gameRouter = router({
     unwrapGameAction(() => startGameRound(input.roundId, ctx.session.user.id))
   ),
 
-  submit: protectedProcedure.input(z.object({ roundId: z.string().uuid() })).mutation(({ ctx, input }) =>
-    unwrapGameAction(() => submitGameResponse(input.roundId, ctx.session.user.id))
-  ),
+  submit: protectedProcedure
+    .input(
+      z.object({
+        roundId: z.string().uuid(),
+        answer: z.string().trim().min(1).max(16).optional()
+      })
+    )
+    .mutation(({ ctx, input }) => unwrapGameAction(() => submitGameResponse(input.roundId, ctx.session.user.id, input.answer))),
+
+  submitAnswer: protectedProcedure
+    .input(
+      z.object({
+        roundId: z.string().uuid(),
+        answer: z.string().trim().min(1).max(16).optional()
+      })
+    )
+    .mutation(({ ctx, input }) => unwrapGameAction(() => submitGameResponse(input.roundId, ctx.session.user.id, input.answer))),
 
   finish: protectedProcedure.input(z.object({ roundId: z.string().uuid() })).mutation(({ ctx, input }) =>
     unwrapGameAction(() => finishGameRound(input.roundId, ctx.session.user.id))

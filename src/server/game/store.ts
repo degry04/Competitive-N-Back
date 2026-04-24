@@ -1,27 +1,29 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { db } from "@/server/db";
-import { responses, roundPlayers, rounds } from "@/server/db/schema";
+import { ratingHistory, responses, roundPlayers, rounds, user } from "@/server/db/schema";
 import {
+  advanceRoundState,
   createRound,
   finishRound,
+  getCurrentStimulus,
   getCurrentStimulusIndex,
   getWinner,
-  isMatchAt,
   joinRound,
-  registerMiss,
-  shouldBotPress,
   startRound,
   submitMatch,
   type GameMode,
   type GameRound,
-  type PlayerState
+  type GoNoGoType,
+  type PlayerState,
+  type Stimulus
 } from "./nback";
+import { calculateRatingUpdates, DEFAULT_RATING, playerStateToRatingParticipant } from "@/server/rating/elo";
 
 const activeRounds = new Map<string, GameRound>();
 
 export async function listActiveRounds() {
-  await Promise.all([...activeRounds.values()].map((round) => processBotPlayers(round)));
+  await Promise.all([...activeRounds.values()].map((round) => processActiveRound(round)));
   return [...activeRounds.values()].map(toPublicRound);
 }
 
@@ -31,9 +33,11 @@ export async function createGameRound(input: {
   n: number;
   mode: GameMode;
   tournament: boolean;
+  rated: boolean;
   length: number;
   baseIntervalMs: number;
   botAccuracy?: number | null;
+  goRatio?: number | null;
 }) {
   const round = createRound({
     id: randomUUID(),
@@ -42,9 +46,11 @@ export async function createGameRound(input: {
     n: input.n,
     mode: input.mode,
     tournament: input.tournament,
+    rated: input.rated,
     length: input.length,
     baseIntervalMs: input.baseIntervalMs,
-    botAccuracy: input.botAccuracy
+    botAccuracy: input.botAccuracy,
+    goRatio: input.goRatio
   });
 
   activeRounds.set(round.id, round);
@@ -83,6 +89,8 @@ export async function listTournamentResults(userId?: string) {
         mode: round.mode,
         length: round.length,
         baseIntervalMs: round.baseIntervalMs,
+        tournament: round.tournament,
+        rated: round.rated,
         finishedAt: round.finishedAt?.toISOString() ?? null,
         winnerUserId: round.winnerUserId,
         participated: userId ? roundPlayersList.some((player) => player.userId === userId) : false,
@@ -106,6 +114,7 @@ export async function listUserGameHistory(userId: string) {
       n: rounds.n,
       mode: rounds.mode,
       tournament: rounds.tournament,
+      rated: rounds.rated,
       length: rounds.length,
       baseIntervalMs: rounds.baseIntervalMs,
       finishedAt: rounds.finishedAt,
@@ -138,6 +147,7 @@ export async function listUserGameHistory(userId: string) {
       n: round.n,
       mode: round.mode,
       tournament: round.tournament,
+      rated: round.rated,
       length: round.length,
       baseIntervalMs: round.baseIntervalMs,
       finishedAt: round.finishedAt?.toISOString() ?? null,
@@ -198,12 +208,15 @@ export async function createNextGameRound(roundId: string, userId: string) {
     n: previous.n,
     mode: previous.mode,
     tournament: previous.tournament,
+    rated: previous.rated,
     length: previous.length,
     baseIntervalMs: previous.baseIntervalMs,
-    botAccuracy: bot?.botAccuracy ?? null
+    botAccuracy: bot?.botAccuracy ?? null,
+    goRatio: previous.goRatio
   });
 
   nextRound.history = [...previous.history];
+  nextRound.ratingProcessed = false;
   for (const player of previous.players.values()) {
     if (player.userId === previous.ownerId || player.isBot) {
       continue;
@@ -231,31 +244,31 @@ export async function startGameRound(roundId: string, userId: string) {
   return toPublicRound(round);
 }
 
-export async function submitGameResponse(roundId: string, userId: string) {
+export async function submitGameResponse(roundId: string, userId: string, answer?: string) {
   const round = getActiveRound(roundId);
-  const result = submitMatch(round, userId);
+  const result = submitMatch(round, userId, answer);
   const player = round.players.get(userId)!;
 
-  await db.insert(responses).values({
-    id: randomUUID(),
-    roundId,
-    userId,
-    stimulusIndex: result.stimulusIndex,
-    expectedMatch: result.expectedMatch,
-    isCorrect: result.isCorrect,
-    intervalAfterMs: result.currentIntervalMs,
-    createdAt: new Date()
-  });
+  if (!result.ignored) {
+    await db.insert(responses).values({
+      id: randomUUID(),
+      roundId,
+      userId,
+      stimulusIndex: result.stimulusIndex,
+      expectedMatch: result.expectedMatch ?? false,
+      isCorrect: result.isCorrect,
+      intervalAfterMs: result.currentIntervalMs,
+      createdAt: new Date()
+    });
+  }
 
-  await db
-    .update(roundPlayers)
-    .set({ correct: player.correct, errors: player.errors, penalty: player.penalty })
-    .where(eq(roundPlayers.id, `${roundId}:${userId}`));
-
-  await db.update(rounds).set({ currentIntervalMs: round.currentIntervalMs }).where(eq(rounds.id, round.id));
+  await persistScoreboard(round);
+  await syncRoundRecord(round);
 
   if (round.status === "finished") {
     await persistFinishedRound(round);
+  } else if (player && !player.isBot) {
+    await persistPlayerScore(round.id, player);
   }
 
   return { round: toPublicRound(round), result };
@@ -287,12 +300,14 @@ async function persistRound(round: GameRound) {
     n: round.n,
     mode: round.mode,
     tournament: round.tournament,
+    rated: round.rated,
     botAccuracy: getRoundBotAccuracy(round),
     length: round.length,
     baseIntervalMs: round.baseIntervalMs,
     currentIntervalMs: round.currentIntervalMs,
     status: round.status,
-    sequenceJson: JSON.stringify(round.sequence),
+    sequenceJson: JSON.stringify(round.stimuli),
+    ratingProcessed: round.ratingProcessed,
     createdAt: new Date()
   });
 
@@ -317,85 +332,240 @@ async function persistPlayer(roundId: string, player: GameRound["players"] exten
   });
 }
 
+async function persistPlayerScore(roundId: string, player: PlayerState) {
+  if (player.isBot) {
+    return;
+  }
+
+  await db
+    .update(roundPlayers)
+    .set({ correct: player.correct, errors: player.errors, penalty: player.penalty })
+    .where(eq(roundPlayers.id, `${roundId}:${player.userId}`));
+}
+
+async function persistScoreboard(round: GameRound) {
+  await Promise.all([...round.players.values()].filter((player) => !player.isBot).map((player) => persistPlayerScore(round.id, player)));
+}
+
+async function syncRoundRecord(round: GameRound) {
+  await db
+    .update(rounds)
+    .set({ currentIntervalMs: round.currentIntervalMs, status: round.status, ratingProcessed: round.ratingProcessed })
+    .where(eq(rounds.id, round.id));
+}
+
 async function persistFinishedRound(round: GameRound) {
   const winner = getWinner(round);
+  await persistScoreboard(round);
+  await applyRatings(round);
   await db
     .update(rounds)
     .set({
       status: "finished",
+      currentIntervalMs: round.currentIntervalMs,
       finishedAt: new Date(round.finishedAt ?? Date.now()),
-      winnerUserId: winner?.userId ?? null
+      winnerUserId: winner?.userId ?? null,
+      ratingProcessed: round.ratingProcessed
     })
     .where(eq(rounds.id, round.id));
 }
 
 function toPublicRound(round: GameRound) {
-  const index = getCurrentStimulusIndex(round);
+  const currentStimulus = getCurrentStimulus(round);
   return {
     id: round.id,
     ownerId: round.ownerId,
     n: round.n,
     mode: round.mode,
     tournament: round.tournament,
+    rated: round.rated,
     length: round.length,
     status: round.status,
     currentIntervalMs: round.currentIntervalMs,
-    stimulusIndex: index,
-    currentPosition: round.sequence[index] ?? null,
+    stimulusIndex: getCurrentStimulusIndex(round),
+    currentPosition: currentStimulus?.kind === "grid" && currentStimulus.visible ? currentStimulus.position : null,
+    currentStimulus,
     players: [...round.players.values()].map((player) => ({
       userId: player.userId,
       displayName: player.displayName,
       isBot: player.isBot,
       correct: player.correct,
       errors: player.errors,
-      penalty: player.penalty
+      penalty: player.penalty,
+      metrics: {
+        averageReactionTime: player.metrics.averageReactionTime,
+        bestReactionTime: player.metrics.bestReactionTime,
+        consistency: player.metrics.consistency,
+        falsePositives: player.metrics.falsePositives,
+        misses: player.metrics.misses,
+        falseStarts: player.metrics.falseStarts,
+        conflictErrors: player.metrics.conflictErrors,
+        accuracy: player.metrics.accuracy
+      }
     })),
     winner: round.status === "finished" ? getWinner(round)?.userId ?? null : null,
+    lastResult: round.lastResult,
     history: round.history
   };
 }
 
-async function processBotPlayers(round: GameRound) {
+async function processActiveRound(round: GameRound) {
   if (round.status !== "running") {
     return;
   }
 
-  const stimulusIndex = getCurrentStimulusIndex(round);
-  const now = Date.now();
-  let intervalChanged = false;
+  const beforeStatus = round.status;
+  const beforeInterval = round.currentIntervalMs;
+  const beforeIndex = round.currentStimulusIndex;
+  const beforeSignature = playerSignature(round);
 
+  advanceRoundState(round);
+  processBotPlayers(round);
+  advanceRoundState(round);
+
+  const changed =
+    beforeStatus !== round.status ||
+    beforeInterval !== round.currentIntervalMs ||
+    beforeIndex !== round.currentStimulusIndex ||
+    beforeSignature !== playerSignature(round);
+
+  if (!changed) {
+    return;
+  }
+
+  await persistScoreboard(round);
+  const finished = round.status !== "running";
+  if (finished) {
+    await persistFinishedRound(round);
+  } else {
+    await syncRoundRecord(round);
+  }
+}
+
+function processBotPlayers(round: GameRound) {
+  if (round.status !== "running") {
+    return;
+  }
+
+  const currentStimulus = getCurrentStimulus(round);
+  if (!currentStimulus?.visible) {
+    return;
+  }
+
+  const currentIndex = round.currentStimulusIndex;
   for (const bot of round.players.values()) {
-    if (!bot.isBot || bot.answeredStimuli.has(stimulusIndex)) {
+    if (!bot.isBot || bot.answeredStimuli.has(currentIndex)) {
       continue;
     }
 
     const accuracy = bot.botAccuracy ?? 0.75;
-    const expectedMatch = isMatchAt(round, stimulusIndex);
-    const botPresses = shouldBotPress(round, stimulusIndex, accuracy);
-
-    if (botPresses) {
-      submitMatch(round, bot.userId, now);
+    const action = decideBotAction(round.mode, currentStimulus as Stimulus & { visible: boolean }, accuracy);
+    if (!action.shouldAct) {
       continue;
     }
 
-    if (expectedMatch) {
-      intervalChanged = registerMiss(round, bot.userId, stimulusIndex) || intervalChanged;
-    } else {
-      bot.answeredStimuli.add(stimulusIndex);
+    const answer = currentStimulus.kind === "stroop" ? action.answer ?? null : undefined;
+    submitMatch(round, bot.userId, answer ?? undefined);
+  }
+}
+
+function decideBotAction(
+  mode: GameMode,
+  stimulus: Stimulus & { visible: boolean },
+  accuracy: number
+): { shouldAct: boolean; answer?: string } {
+  switch (mode) {
+    case "classic":
+    case "recent-5":
+      return stimulus.kind === "grid" && stimulus.visible
+        ? { shouldAct: Math.random() < accuracy }
+        : { shouldAct: false };
+    case "go-no-go":
+      if (stimulus.kind !== "go-no-go") {
+        return { shouldAct: false };
+      }
+      return { shouldAct: stimulus.type === "GO" ? Math.random() < accuracy : Math.random() > accuracy };
+    case "reaction-time":
+      return { shouldAct: Math.random() < accuracy };
+    case "stroop": {
+      if (stimulus.kind !== "stroop") {
+        return { shouldAct: false };
+      }
+      const correct = Math.random() < accuracy;
+      return {
+        shouldAct: true,
+        answer: correct ? stimulus.color : pickWrongColor(stimulus.color)
+      };
     }
   }
+}
 
-  if (intervalChanged) {
-    await db.update(rounds).set({ currentIntervalMs: round.currentIntervalMs }).where(eq(rounds.id, round.id));
-  }
+function pickWrongColor(color: string) {
+  const colors = ["red", "blue", "green", "yellow"].filter((entry) => entry !== color);
+  return colors[Math.floor(Math.random() * colors.length)]!;
+}
 
-  if (stimulusIndex >= round.length - 1 && round.status === "running") {
-    finishRound(round, now);
-    await persistFinishedRound(round);
-  }
+function playerSignature(round: GameRound) {
+  return [...round.players.values()]
+    .map((player) => `${player.userId}:${player.correct}:${player.errors}:${player.penalty}:${player.metrics.accuracy}`)
+    .join("|");
 }
 
 function getRoundBotAccuracy(round: GameRound) {
   const bot = [...round.players.values()].find((player: PlayerState) => player.isBot);
   return bot?.botAccuracy === undefined ? null : Math.round(bot.botAccuracy * 100);
+}
+
+async function applyRatings(round: GameRound) {
+  if (round.ratingProcessed) {
+    return;
+  }
+  if (!round.rated) {
+    round.ratingProcessed = true;
+    return;
+  }
+
+  const humanPlayers = [...round.players.values()].filter((player) => !player.isBot);
+  if (humanPlayers.length < 2) {
+    round.ratingProcessed = true;
+    return;
+  }
+
+  const ratings = await db
+    .select({
+      id: user.id,
+      rating: user.rating
+    })
+    .from(user)
+    .where(inArray(user.id, humanPlayers.map((player) => player.userId)));
+
+  const ratingByUserId = new Map(ratings.map((entry) => [entry.id, entry.rating]));
+  const updates = calculateRatingUpdates(
+    humanPlayers.map((player) => playerStateToRatingParticipant(player, ratingByUserId.get(player.userId) ?? DEFAULT_RATING))
+  );
+
+  await Promise.all(
+    updates.map(async (update) => {
+      await db
+        .update(user)
+        .set({
+          rating: update.newRating,
+          rank: update.rank,
+          updatedAt: new Date()
+        })
+        .where(eq(user.id, update.userId));
+
+      await db.insert(ratingHistory).values({
+        id: randomUUID(),
+        userId: update.userId,
+        roundId: round.id,
+        oldRating: update.oldRating,
+        newRating: update.newRating,
+        change: update.change,
+        createdAt: new Date()
+      });
+    })
+  );
+
+  round.ratingProcessed = true;
 }

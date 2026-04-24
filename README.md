@@ -1,41 +1,48 @@
-# Competitive N-back
+# Competitive N-Back
 
-Веб-приложение для соревновательного N-back: сервер генерирует последовательность позиций в сетке 3x3, сервер проверяет ответы, ошибки одного игрока ускоряют раунд для всех.
+Соревновательный набор когнитивных тренажеров для 2-4 игроков. Сервер генерирует стимулы, валидирует ответы, считает метрики и применяет штрафы, которые могут ускорять раунд для всех участников.
 
+## Доступные тренажеры
 
-## Вся документация в docs
-- README.md                # обзор проекта
-- architecture.md         # архитектура
-- game-design.md          # правила игры
-- api.md                  # tRPC API
-- database.md             # схема БД
-- realtime.md             # WebSocket / subscriptions
-- security.md             # безопасность
-- testing.md              # тестирование
-- deployment.md           # деплой
-- roadmap.md              # развитие
+- `N-back`
+- `Recent-5`
+- `Go / No-Go`
+- `Reaction Time`
+- `Stroop Test`
+
+## Документация
+
+Все подробные материалы лежат в папке `docs/`:
+
+- `docs/README.md` — обзор проекта
+- `docs/architecture.md` — архитектура
+- `docs/game-design.md` — правила и игровые режимы
+- `docs/api.md` — tRPC API
+- `docs/database.md` — схема БД
+- `docs/realtime.md` — realtime-модель
+- `docs/security.md` — безопасность
+- `docs/testing.md` — тестирование
+- `docs/deployment.md` — развёртывание
+- `docs/roadmap.md` — развитие проекта
+
 ## Стек
 
-- Next.js + TypeScript: full-stack приложение с App Router.
-- tRPC: защищенные типобезопасные процедуры для игровых действий.
-- Drizzle ORM + SQLite/libSQL: хранение пользователей, раундов и результатов.
-- Better Auth: email/password-аутентификация и серверная проверка сессии.
-- Vitest: быстрые модульные тесты бизнес-логики.
-- Zod: валидация входных данных tRPC-процедур.
-
-## Почему дополнительные библиотеки
-
-- `zod` выбран для валидации входов tRPC: он фактически является стандартным вариантом в экосистеме tRPC и дает runtime-проверки, которых нет у TypeScript. Альтернативы вроде Valibot быстрее на некоторых сценариях, но Zod лучше документирован и проще для учебного проекта.
-- `superjson` нужен для корректной сериализации данных между клиентом и tRPC-сервером. Альтернатива JSON проще, но хуже работает с датами и расширяемыми типами.
-- `vitest` выбран вместо Jest, потому что быстрее стартует в TypeScript/Vite-экосистеме и требует меньше конфигурации для тестирования чистой бизнес-логики.
-- `lucide-react` нужен для компактных и понятных UI-иконок. Альтернативы вроде Heroicons хороши, но Lucide шире покрывает инструментальные интерфейсы и легче стилизуется через SVG props.
+- Next.js + TypeScript
+- tRPC
+- Drizzle ORM + SQLite/libSQL
+- better-auth
+- Vitest
+- Zod
 
 ## Запуск
 
-```bash
+### Development
+
+PowerShell:
+
+```powershell
 npm install
-cp .env.example .env
-npm run db:generate
+Copy-Item .env.example .env.local
 npm run db:migrate
 npm run dev
 ```
@@ -44,8 +51,25 @@ npm run build
 npm start
 ```
 
-Тесты:
+### Production
 
-```bash
+```powershell
+npm install
+Copy-Item .env.example .env.local
+npm run db:migrate
+npm run build
+npm start
+```
+
+## Тесты
+
+```powershell
 npm test
 ```
+
+## Rated Lobbies
+
+- Rated lobby is created from the main lobby form.
+- ELO changes only after a finished rated match.
+- Bots are disabled for rated matches.
+- Rating, rank, and rating history are displayed on the separate `/stats` page.

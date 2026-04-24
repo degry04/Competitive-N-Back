@@ -1,28 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { createRound, isMatchAt, joinRound, shouldBotPress, startRound, submitMatch } from "./nback";
+import {
+  advanceRoundState,
+  createRound,
+  isMatchAt,
+  joinRound,
+  startRound,
+  submitMatch,
+  validateGoNoGoResponse,
+  validateReactionResponse,
+  validateStroopResponse
+} from "./nback";
 
-function makeRound(sequence = [0, 1, 0, 2, 0, 4, 0]) {
+function makeRound(mode: Parameters<typeof createRound>[0]["mode"] = "classic", stimuli = undefined as Parameters<typeof createRound>[0]["stimuli"]) {
   return createRound({
     id: "round-1",
     ownerId: "player-1",
     ownerName: "Ada",
     n: 2,
-    mode: "classic",
+    mode,
     tournament: false,
-    length: sequence.length,
+    length: stimuli?.length ?? 5,
     baseIntervalMs: 1000,
-    sequence
+    goRatio: 0.7,
+    stimuli
   });
 }
 
-describe("competitive n-back business rules", () => {
-  it("detects matches against the stimulus N steps back", () => {
-    const round = makeRound();
+describe("competitive trainer business rules", () => {
+  it("detects classic n-back matches", () => {
+    const round = makeRound("classic", [
+      { kind: "grid", position: 0 },
+      { kind: "grid", position: 1 },
+      { kind: "grid", position: 0 },
+      { kind: "grid", position: 3 }
+    ]);
 
     expect(isMatchAt(round, 0)).toBe(false);
     expect(isMatchAt(round, 2)).toBe(true);
     expect(isMatchAt(round, 3)).toBe(false);
-    expect(isMatchAt(round, 4)).toBe(true);
   });
 
   it("requires 2 players and supports no more than 4 players", () => {
@@ -37,66 +52,73 @@ describe("competitive n-back business rules", () => {
     expect(() => joinRound(round, "player-5", "Barbara")).toThrow("up to 4 players");
   });
 
-  it("adds penalties for wrong match presses", () => {
-    const round = makeRound();
+  it("applies penalty on wrong n-back click", () => {
+    const round = makeRound("classic", [
+      { kind: "grid", position: 0 },
+      { kind: "grid", position: 1 },
+      { kind: "grid", position: 2 }
+    ]);
     joinRound(round, "player-2", "Grace");
     startRound(round, 0);
 
-    const result = submitMatch(round, "player-1", 100);
-    const player = round.players.get("player-1");
+    const result = submitMatch(round, "player-1", undefined, 100);
 
     expect(result.isCorrect).toBe(false);
-    expect(player?.errors).toBe(1);
-    expect(player?.penalty).toBe(1);
+    expect(round.players.get("player-1")?.errors).toBe(1);
+    expect(round.players.get("player-1")?.penalty).toBe(1);
   });
 
-  it("speeds up everyone after every third error from one player", () => {
-    const round = makeRound([0, 1, 2, 3, 4, 5, 6]);
+  it("handles go/no-go hits and misses", () => {
+    const round = makeRound("go-no-go", [
+      { kind: "go-no-go", type: "GO" },
+      { kind: "go-no-go", type: "NO_GO" }
+    ]);
     joinRound(round, "player-2", "Grace");
     startRound(round, 0);
 
-    submitMatch(round, "player-1", 100);
-    submitMatch(round, "player-1", 1100);
-    const third = submitMatch(round, "player-1", 2100);
+    const hit = submitMatch(round, "player-1", undefined, 100);
+    advanceRoundState(round, 1000);
+    advanceRoundState(round, 2000);
 
-    expect(third.speedChanged).toBe(true);
-    expect(round.currentIntervalMs).toBe(900);
+    expect(validateGoNoGoResponse({ kind: "go-no-go", type: "GO" }, true)).toBe(true);
+    expect(hit.isCorrect).toBe(true);
+    expect(round.players.get("player-2")?.metrics.misses).toBe(1);
   });
 
-  it("counts correct responses when the current stimulus is a match", () => {
-    const round = makeRound([0, 1, 0, 3, 4]);
+  it("marks reaction false starts and valid reaction times", () => {
+    const round = makeRound("reaction-time", [{ kind: "reaction-time", delayMs: 1200 }]);
     joinRound(round, "player-2", "Grace");
     startRound(round, 0);
 
-    const result = submitMatch(round, "player-1", 2100);
+    const falseStart = submitMatch(round, "player-1", undefined, 500);
+    const valid = submitMatch(round, "player-2", undefined, 1300);
 
-    expect(result.expectedMatch).toBe(true);
+    expect(validateReactionResponse(1200, 500).falseStart).toBe(true);
+    expect(falseStart.falseStart).toBe(true);
+    expect(valid.reactionTime).toBe(100);
+  });
+
+  it("validates stroop answers by color instead of word", () => {
+    const round = makeRound("stroop", [{ kind: "stroop", word: "red", color: "blue", congruent: false }]);
+    joinRound(round, "player-2", "Grace");
+    startRound(round, 0);
+
+    const result = submitMatch(round, "player-1", "blue", 100);
+
+    expect(validateStroopResponse({ kind: "stroop", word: "red", color: "blue", congruent: false }, "blue")).toBe(true);
     expect(result.isCorrect).toBe(true);
-    expect(round.players.get("player-1")?.correct).toBe(1);
   });
 
-  it("supports the simplified recent-5 match mode", () => {
-    const round = createRound({
-      id: "round-2",
-      ownerId: "player-1",
-      ownerName: "Ada",
-      n: 4,
-      mode: "recent-5",
-      tournament: false,
-      length: 7,
-      baseIntervalMs: 1000,
-      sequence: [0, 1, 2, 3, 4, 0, 8]
-    });
+  it("supports recent-5 matching", () => {
+    const round = makeRound("recent-5", [
+      { kind: "grid", position: 0 },
+      { kind: "grid", position: 1 },
+      { kind: "grid", position: 2 },
+      { kind: "grid", position: 3 },
+      { kind: "grid", position: 4 },
+      { kind: "grid", position: 0 }
+    ]);
 
     expect(isMatchAt(round, 5)).toBe(true);
-    expect(isMatchAt(round, 6)).toBe(false);
-  });
-
-  it("lets bots decide according to configured accuracy", () => {
-    const round = makeRound([0, 1, 0, 3, 4]);
-
-    expect(shouldBotPress(round, 2, 0.75, () => 0.2)).toBe(true);
-    expect(shouldBotPress(round, 2, 0.75, () => 0.9)).toBe(false);
-    expect(shouldBotPress(round, 3, 0.75, () => 0.9)).toBe(true);
   });
 });

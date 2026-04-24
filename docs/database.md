@@ -13,6 +13,8 @@
 | `id` | text / uuid | Primary key. |
 | `name` | text | Отображаемое имя или никнейм. |
 | `email` | text | Уникальный email для входа. |
+| `rating` | integer | Текущий ELO-рейтинг, по умолчанию `1000`. |
+| `rank` | text | Текущий ранг игрока, например `Silver`. |
 | `emailVerified` | boolean | Статус подтверждения email. |
 | `image` | text nullable | Опциональный аватар. |
 | `createdAt` | timestamp | Время создания аккаунта. |
@@ -85,6 +87,7 @@
 | `startedAt` | timestamp nullable | Время старта. |
 | `finishedAt` | timestamp nullable | Время завершения. |
 | `winnerUserId` | uuid nullable | Победитель. |
+| `ratingProcessed` | boolean | Признак, что ELO для матча уже применён. |
 | `createdAt` | timestamp | Время создания. |
 
 Зачем нужна: комната — durable-контейнер одной общей игровой сессии.
@@ -123,6 +126,22 @@
 
 Зачем нужна: ответы дают аудитируемость и позволяют строить подробную историю.
 
+## `rating_history`
+
+История изменений рейтинга после матчей.
+
+| Поле | Тип | Примечание |
+| --- | --- | --- |
+| `id` | uuid | Primary key. |
+| `userId` | uuid | Ссылка на `user.id`. |
+| `roundId` | uuid | Ссылка на `rounds.id`. |
+| `oldRating` | integer | Рейтинг до матча. |
+| `newRating` | integer | Рейтинг после матча. |
+| `change` | integer | Дельта рейтинга. |
+| `createdAt` | timestamp | Время фиксации изменения. |
+
+Зачем нужна: позволяет показывать progression, аудитировать расчёт ELO и строить рейтинг-историю игрока.
+
 ## ER-описание
 
 ```text
@@ -131,9 +150,11 @@ user 1 ── * account
 user 1 ── * rooms          через rooms.ownerId
 user 1 ── * room_players
 user 1 ── * responses
+user 1 ── * rating_history
 
 rooms 1 ── * room_players
 rooms 1 ── * responses
+rooms 1 ── * rating_history
 rooms 1 ── 0..1 user       через rooms.winnerUserId
 ```
 
@@ -145,3 +166,8 @@ rooms 1 ── 0..1 user       через rooms.winnerUserId
 - Победитель записывается при переходе комнаты в `finished`.
 - Поля счёта в `room_players` обновляются только после серверной проверки ответа.
 
+## Rated data
+
+- `rounds.rated` marks whether a lobby affects ELO.
+- `rounds.ratingProcessed` prevents duplicate ELO updates.
+- `rating_history` stores the old rating, new rating, and delta for each processed rated match.

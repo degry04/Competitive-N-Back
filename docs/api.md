@@ -1,8 +1,6 @@
 # API
 
-API реализован через tRPC. Имена процедур рассматриваются как контракт между frontend и backend.
-
-Все protected-процедуры требуют активную сессию better-auth.
+API реализован через tRPC. Процедуры ниже описывают реальный контракт между клиентом и сервером.
 
 ## Общие типы
 
@@ -15,40 +13,27 @@ type RoomStatus = "lobby" | "running" | "finished";
 ### GameMode
 
 ```ts
-type GameMode = "classic";
+type GameMode = "classic" | "recent-5" | "go-no-go" | "reaction-time" | "stroop";
 ```
 
-### PublicRoom
+### SubmitResult
 
 ```ts
-type PublicRoom = {
-  id: string;
-  ownerId: string;
-  status: RoomStatus;
-  n: 2 | 3 | 4;
-  length: number;
-  baseIntervalMs: number;
+type SubmitResult = {
+  stimulusIndex: number;
+  isCorrect: boolean;
+  expectedMatch: boolean | null;
+  speedChanged: boolean;
   currentIntervalMs: number;
-  currentIndex: number;
-  currentPosition: number | null;
-  players: PublicPlayer[];
-  winnerUserId: string | null;
+  finished: boolean;
+  ignored: boolean;
+  reason: "duplicate" | "late" | "waiting" | null;
+  reactionTime: number | null;
+  falseStart: boolean;
 };
 ```
 
-### PublicPlayer
-
-```ts
-type PublicPlayer = {
-  userId: string;
-  displayName: string;
-  correct: number;
-  errors: number;
-  penalty: number;
-};
-```
-
-## `room.create`
+## `game.create`
 
 | Свойство | Значение |
 | --- | --- |
@@ -60,8 +45,12 @@ type PublicPlayer = {
 ```ts
 {
   n: 2 | 3 | 4;
+  mode: GameMode;
+  tournament: boolean;
   length: number;
   baseIntervalMs: number;
+  goRatio: number;
+  botAccuracy: number | null;
 }
 ```
 
@@ -69,34 +58,18 @@ type PublicPlayer = {
 
 | Поле | Правило |
 | --- | --- |
-| `n` | Только `2`, `3` или `4`. |
-| `length` | Должно быть больше `n`. Рекомендуемый диапазон: `12-120`. |
-| `baseIntervalMs` | Не меньше `450`. |
+| `n` | Только `2`, `3` или `4`. Для не-grid режимов сохраняется как совместимый параметр комнаты. |
+| `mode` | Один из поддерживаемых режимов. |
+| `length` | От `12` до `120`. |
+| `baseIntervalMs` | От `450` до `4000`. |
+| `goRatio` | От `0.4` до `0.9`, используется только в Go / No-Go. |
+| `botAccuracy` | От `0.1` до `0.99` или `null`. |
 
 ### Output
 
-```ts
-PublicRoom
-```
+Возвращает публичное состояние комнаты: настройки, текущий стимул, игроков, метрики и последний результат стимула.
 
-### Ошибки
-
-| Код | Причина |
-| --- | --- |
-| `UNAUTHORIZED` | Пользователь не авторизован. |
-| `BAD_REQUEST` | Некорректные настройки комнаты. |
-
-### Пример
-
-```json
-{
-  "n": 2,
-  "length": 30,
-  "baseIntervalMs": 1600
-}
-```
-
-## `room.join`
+## `game.join`
 
 | Свойство | Значение |
 | --- | --- |
@@ -107,33 +80,17 @@ PublicRoom
 
 ```ts
 {
-  roomId: string;
+  roundId: string;
 }
 ```
 
 ### Validation
 
-| Правило | Причина |
-| --- | --- |
-| Комната существует | Нельзя присоединиться к удалённой или несуществующей комнате. |
-| Статус комнаты `lobby` | В запущенную игру нельзя добавлять игроков. |
-| Игроков меньше 4 | Соблюдается лимит multiplayer-сессии. |
+- комната должна существовать;
+- статус комнаты должен быть `lobby`;
+- игроков должно быть меньше 4.
 
-### Output
-
-```ts
-PublicRoom
-```
-
-### Ошибки
-
-| Код | Причина |
-| --- | --- |
-| `UNAUTHORIZED` | Пользователь не авторизован. |
-| `NOT_FOUND` | Комната не найдена. |
-| `BAD_REQUEST` | Комната заполнена или уже запущена. |
-
-## `room.start`
+## `game.start`
 
 | Свойство | Значение |
 | --- | --- |
@@ -144,159 +101,150 @@ PublicRoom
 
 ```ts
 {
-  roomId: string;
+  roundId: string;
 }
 ```
 
 ### Validation
 
-| Правило | Причина |
+- запускать может только владелец;
+- комната должна быть в `lobby`;
+- в комнате должно быть 2-4 участника.
+
+## `game.submit`
+
+Основная точка отправки ответа для всех тренажеров.
+
+| Свойство | Значение |
 | --- | --- |
-| Вызывающий пользователь — владелец | Только создатель комнаты управляет стартом. |
-| Комната в статусе `lobby` | Защита от повторного запуска. |
-| Игроков 2-4 | Сессия должна быть соревновательной. |
+| Тип | Mutation |
+| Auth | Требуется |
+
+### Input
+
+```ts
+{
+  roundId: string;
+  answer?: string;
+}
+```
+
+### Поведение по режимам
+
+| Режим | Что отправляет клиент |
+| --- | --- |
+| `classic` | пустой submit при клике |
+| `recent-5` | пустой submit при клике |
+| `go-no-go` | пустой submit при клике |
+| `reaction-time` | пустой submit при клике |
+| `stroop` | `answer` со значением цвета |
 
 ### Output
 
 ```ts
-PublicRoom
+{
+  round: PublicRound;
+  result: SubmitResult;
+}
 ```
 
-### Ошибки
+### Edge cases
 
-| Код | Причина |
+| Ситуация | Результат |
 | --- | --- |
-| `FORBIDDEN` | Пользователь не владелец комнаты. |
-| `BAD_REQUEST` | Комната не готова или не находится в lobby. |
-| `NOT_FOUND` | Комната не найдена. |
+| duplicate click | `ignored: true`, `reason: "duplicate"` |
+| late click | `ignored: true`, `reason: "late"` |
+| false start | `falseStart: true`, штраф применяется на сервере |
 
 ## `game.submitAnswer`
 
-| Свойство | Значение |
-| --- | --- |
-| Тип | Mutation |
-| Auth | Требуется |
+Алиас для `game.submit` с тем же input и output. Нужен как более явное имя контракта для внешних интеграций.
+
+## `game.list`
+
+Возвращает все активные комнаты. Перед ответом сервер:
+
+- продвигает таймеры;
+- завершает просроченные стимулы;
+- применяет автоматические miss/omit правила;
+- обрабатывает действия ботов;
+- обновляет scoreboard.
+
+## `game.myHistory`
+
+Возвращает завершенные игры текущего пользователя.
+
+## `game.tournaments`
+
+Возвращает завершенные турнирные раунды.
+
+## `game.myTournaments`
+
+Возвращает только те турниры, где текущий пользователь участвовал.
+
+## `game.finish`
+
+Ручное завершение раунда владельцем.
+
+## `game.next`
+
+Создание следующего раунда с тем же составом игроков и теми же настройками.
+
+## `game.close`
+
+Закрытие лобби владельцем. Если раунд ещё идет, сервер сначала его завершает.
+
+## `stats.getRating`
+
+Возвращает текущий рейтинг игрока, его ранг и последние изменения из `rating_history`.
 
 ### Input
 
 ```ts
 {
-  roomId: string;
+  userId?: string;
 }
 ```
 
-Клиент не отправляет `stimulusIndex` или `isMatch`. Сервер сам определяет активный стимул по авторитетному времени.
+Если `userId` не передан, используется текущий пользователь.
 
-### Output
+## `stats.getLeaderboard`
 
-```ts
-{
-  room: PublicRoom;
-  result: {
-    stimulusIndex: number;
-    expectedMatch: boolean;
-    isCorrect: boolean;
-    speedChanged: boolean;
-    currentIntervalMs: number;
-    finished: boolean;
-  };
-}
-```
-
-### Validation
-
-| Правило | Причина |
-| --- | --- |
-| Игра запущена | Ответы допустимы только во время активной игры. |
-| Пользователь является игроком комнаты | Наблюдатели не влияют на счёт. |
-| Один ответ на игрока на стимул | Защита от спама и накрутки счёта. |
-
-### Ошибки
-
-| Код | Причина |
-| --- | --- |
-| `UNAUTHORIZED` | Пользователь не авторизован. |
-| `NOT_FOUND` | Комната не найдена. |
-| `BAD_REQUEST` | Игра не запущена или ответ повторный. |
-
-## `game.subscribe`
-
-| Свойство | Значение |
-| --- | --- |
-| Тип | Subscription |
-| Auth | Требуется |
+Возвращает таблицу лидеров по ELO.
 
 ### Input
 
 ```ts
 {
-  roomId: string;
+  limit?: number;
 }
 ```
 
 ### Output
 
 ```ts
+Array<{
+  place: number;
+  id: string;
+  name: string;
+  rating: number;
+  rank: string;
+}>
+```
+
+## Rated lobby notes
+
+`game.create` also accepts:
+
+```ts
 {
-  event: "game:start" | "game:tick" | "game:update" | "game:end";
-  roomId: string;
-  sequence: number;
-  sentAt: string;
-  payload: unknown;
+  rated: boolean;
 }
 ```
 
-### Payload событий
+Rules:
 
-#### `game:start`
-
-```json
-{
-  "status": "running",
-  "startedAt": "2026-04-23T10:00:00.000Z",
-  "currentIntervalMs": 1600
-}
-```
-
-#### `game:tick`
-
-```json
-{
-  "currentIndex": 8,
-  "currentPosition": 4,
-  "currentIntervalMs": 1440
-}
-```
-
-#### `game:update`
-
-```json
-{
-  "players": [
-    {
-      "userId": "user_1",
-      "displayName": "Alice",
-      "correct": 5,
-      "errors": 1,
-      "penalty": 1
-    }
-  ]
-}
-```
-
-#### `game:end`
-
-```json
-{
-  "winnerUserId": "user_1",
-  "finishedAt": "2026-04-23T10:01:10.000Z"
-}
-```
-
-### Ошибки
-
-| Код | Причина |
-| --- | --- |
-| `UNAUTHORIZED` | Пользователь не авторизован. |
-| `NOT_FOUND` | Комната не найдена. |
-
+- if `rated === true`, the server applies ELO after the round finishes;
+- rated lobbies reject bots;
+- `stats.getRating` is used by the dedicated stats page;
+- `stats.getLeaderboard` powers the global leaderboard.

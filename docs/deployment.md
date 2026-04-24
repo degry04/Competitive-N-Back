@@ -5,14 +5,14 @@
 | Требование | Версия |
 | --- | --- |
 | Node.js | 20+ |
-| PostgreSQL | 15+ |
+| SQLite / libSQL | file-based or local libSQL |
 | npm | Последняя stable |
 
 ## Переменные окружения
 
 | Переменная | Обязательна | Описание |
 | --- | --- | --- |
-| `DATABASE_URL` | Да | PostgreSQL connection string для Drizzle. |
+| `DATABASE_URL` | Да | Путь к SQLite/libSQL базе, например `file:./data/nback.sqlite`. |
 | `BETTER_AUTH_SECRET` | Да | Секрет better-auth. Должен быть длинным и случайным. |
 | `BETTER_AUTH_URL` | Да | Публичный origin приложения. |
 | `NEXT_PUBLIC_APP_URL` | Да | Публичный URL приложения для frontend. |
@@ -20,7 +20,7 @@
 Пример:
 
 ```bash
-DATABASE_URL="postgresql://app_user:strong_password@db:5432/competitive_nback"
+DATABASE_URL="file:./data/nback.sqlite"
 BETTER_AUTH_SECRET="a-long-random-production-secret"
 BETTER_AUTH_URL="https://nback.example.com"
 NEXT_PUBLIC_APP_URL="https://nback.example.com"
@@ -28,10 +28,9 @@ NEXT_PUBLIC_APP_URL="https://nback.example.com"
 
 ## Настройка базы данных
 
-1. Создайте PostgreSQL database.
-2. Создайте пользователя БД с правами на миграции и runtime-доступ.
-3. Укажите `DATABASE_URL`.
-4. Запустите миграции:
+1. Укажите `DATABASE_URL`.
+2. При первом запуске приложение само создаст директорию `data/`, если её нет.
+3. Запустите миграции:
 
 ```bash
 npm run db:migrate
@@ -113,4 +112,3 @@ npm run build
 - realtime-обновления приходят;
 - ответы обновляют счёт на сервере;
 - завершённые игры сохраняются.
-

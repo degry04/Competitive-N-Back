@@ -1,6 +1,24 @@
 "use client";
 
-import { Bot, HelpCircle, History, LogIn, LogOut, Play, Plus, Radio, Send, Trophy, UserPlus, X } from "lucide-react";
+import {
+  Bot,
+  HelpCircle,
+  History,
+  LogIn,
+  LogOut,
+  Play,
+  Plus,
+  Radio,
+  Send,
+  Shield,
+  ShieldQuestion,
+  Timer,
+  TrafficCone,
+  Trophy,
+  UserPlus,
+  WholeWord,
+  X
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createAuthClient } from "better-auth/react";
@@ -9,12 +27,15 @@ import { trpc } from "@/trpc/client";
 const authClient = createAuthClient();
 
 type AuthMode = "sign-in" | "sign-up";
-type GameMode = "classic" | "recent-5";
+type GameMode = "classic" | "recent-5" | "go-no-go" | "reaction-time" | "stroop";
+type StroopColor = "red" | "blue" | "green" | "yellow";
+
 type TournamentRound = {
   id: string;
   n: number;
   mode: GameMode;
   tournament?: boolean;
+  rated?: boolean;
   length: number;
   baseIntervalMs: number;
   finishedAt: string | null;
@@ -29,14 +50,30 @@ type TournamentRound = {
     penalty: number;
   }>;
 };
+
+type PublicStimulus =
+  | { kind: "grid"; position: number; visible: boolean }
+  | { kind: "go-no-go"; type: "GO" | "NO_GO"; visible: boolean }
+  | { kind: "reaction-time"; delayMs: number; visible: boolean }
+  | { kind: "stroop"; word: StroopColor; color: StroopColor; congruent: boolean; visible: boolean }
+  | null;
+
 type FeedbackFlash = { position: number; kind: "correct" | "error"; nonce: number } | null;
+
+const STROOP_BUTTONS: Array<{ value: StroopColor; label: string }> = [
+  { value: "red", label: "Красный" },
+  { value: "blue", label: "Синий" },
+  { value: "green", label: "Зеленый" },
+  { value: "yellow", label: "Желтый" }
+];
 
 export default function GameClient() {
   const { data: session, refetch: refetchSession } = authClient.useSession();
   const [authMode, setAuthMode] = useState<AuthMode>("sign-in");
-  const [email, setEmail] = useState("player@example.com");
-  const [password, setPassword] = useState("password1234");
-  const [name, setName] = useState("Player");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
   const [activeRoundId, setActiveRoundId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [feedbackFlash, setFeedbackFlash] = useState<FeedbackFlash>(null);
@@ -47,13 +84,15 @@ export default function GameClient() {
   const [baseIntervalMs, setBaseIntervalMs] = useState(1600);
   const [length, setLength] = useState(30);
   const [tournament, setTournament] = useState(false);
+  const [rated, setRated] = useState(false);
   const [useBot, setUseBot] = useState(true);
   const [botAccuracy, setBotAccuracy] = useState(75);
+  const [goRatio, setGoRatio] = useState(70);
 
   const utils = trpc.useUtils();
   const rounds = trpc.game.list.useQuery(undefined, {
     enabled: Boolean(session),
-    refetchInterval: 800
+    refetchInterval: 500
   });
   const myTournaments = trpc.game.myTournaments.useQuery(undefined, {
     enabled: Boolean(session),
@@ -87,7 +126,20 @@ export default function GameClient() {
   });
   const submit = trpc.game.submit.useMutation({
     onSuccess: ({ result }) => {
-      setMessage(result.isCorrect ? "Верно: совпадение найдено" : "Ошибка: штраф и риск ускорения");
+      if (result.ignored) {
+        setMessage(
+          result.reason === "duplicate"
+            ? "Ответ уже был отправлен."
+            : result.reason === "waiting"
+              ? "Стимул еще не появился."
+              : "Ответ слишком поздний и был проигнорирован."
+        );
+      } else if (result.falseStart) {
+        setMessage("Фальстарт: штраф и ускорение для всех.");
+      } else {
+        setMessage(result.isCorrect ? "Верно." : "Ошибка: начислен штраф.");
+      }
+
       if (lastSubmittedPosition !== null) {
         setFeedbackFlash({ position: lastSubmittedPosition, kind: result.isCorrect ? "correct" : "error", nonce: Date.now() });
       }
@@ -129,6 +181,11 @@ export default function GameClient() {
   const currentPlayer = activeRound?.players.find((player) => player.userId === session?.user.id) ?? null;
   const canAnswer = activeRound?.status === "running" && Boolean(currentPlayer);
   const isOwner = activeRound?.ownerId === session?.user.id;
+  const currentStimulus = (activeRound?.currentStimulus ?? null) as PublicStimulus;
+  const lastResult = activeRound?.lastResult ?? null;
+  const showNSelector = mode === "classic" || mode === "recent-5";
+  const isGridMode = activeRound?.mode === "classic" || activeRound?.mode === "recent-5";
+  const authValidationError = getAuthValidationError({ authMode, email, password, confirmPassword, name });
 
   useEffect(() => {
     if (activeRound && activeRound.id !== activeRoundId) {
@@ -145,8 +202,18 @@ export default function GameClient() {
     return () => window.clearTimeout(timeout);
   }, [feedbackFlash]);
 
+  useEffect(() => {
+    if (rated && useBot) {
+      setUseBot(false);
+    }
+  }, [rated, useBot]);
+
   async function handleAuth() {
     setMessage("");
+    if (authValidationError) {
+      setMessage(authValidationError);
+      return;
+    }
     const identifier = email.trim();
     const loginEmail =
       authMode === "sign-in" ? (await resolveLoginIdentifier.mutateAsync({ identifier })).email : identifier;
@@ -159,6 +226,11 @@ export default function GameClient() {
       setMessage(result.error.message ?? "Ошибка аутентификации");
       return;
     }
+
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setName("");
     await refetchSession();
   }
 
@@ -174,18 +246,24 @@ export default function GameClient() {
       n,
       mode,
       tournament,
+      rated,
       length: tournament ? Math.max(length, 45) : length,
       baseIntervalMs,
-      botAccuracy: useBot ? botAccuracy / 100 : null
+      goRatio: goRatio / 100,
+      botAccuracy: rated ? null : useBot ? botAccuracy / 100 : null
     });
   }
 
-  function handleSubmit() {
+  function handleSubmit(answer?: string) {
     if (!activeRound) {
       return;
     }
-    setLastSubmittedPosition(activeRound.currentPosition ?? null);
-    submit.mutate({ roundId: activeRound.id });
+    if (currentStimulus?.kind === "grid") {
+      setLastSubmittedPosition(currentStimulus.position);
+    } else {
+      setLastSubmittedPosition(null);
+    }
+    submit.mutate({ roundId: activeRound.id, answer });
   }
 
   if (!session) {
@@ -199,19 +277,31 @@ export default function GameClient() {
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            autoComplete={authMode === "sign-in" ? "username" : "email"}
             placeholder={authMode === "sign-in" ? "email или никнейм" : "email"}
           />
           {authMode === "sign-up" && (
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="никнейм игрока" />
+            <input value={name} onChange={(event) => setName(event.target.value)} autoComplete="nickname" placeholder="никнейм игрока" />
           )}
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            autoComplete={authMode === "sign-in" ? "current-password" : "new-password"}
             placeholder="пароль"
             type="password"
           />
+          {authMode === "sign-up" && (
+            <input
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              autoComplete="new-password"
+              placeholder="повторите пароль"
+              type="password"
+            />
+          )}
+          {authMode === "sign-up" && <p className="field-hint">Пароль должен содержать не менее 8 символов, никнейм — от 3 символов.</p>}
           <div className="button-row">
-            <button className="primary" onClick={handleAuth}>
+            <button className="primary" disabled={Boolean(authValidationError)} onClick={handleAuth}>
               <LogIn size={18} /> {authMode === "sign-in" ? "Войти" : "Создать"}
             </button>
             <button className="secondary" onClick={() => setAuthMode(authMode === "sign-in" ? "sign-up" : "sign-in")}>
@@ -233,6 +323,12 @@ export default function GameClient() {
         </div>
         <p className="side-note">Вы вошли как {session.user.name || session.user.email}</p>
         <div className="button-row account-actions">
+          <Link className="secondary link-button" href="/guide">
+            <HelpCircle size={18} /> Руководство
+          </Link>
+          <Link className="secondary link-button" href="/stats">
+            <Shield size={18} /> Rating
+          </Link>
           <Link className="secondary link-button" href="/history">
             <History size={18} /> История
           </Link>
@@ -243,22 +339,36 @@ export default function GameClient() {
 
         <div className="settings-panel">
           <label>
-            Режим
+            Тренажер
             <select value={mode} onChange={(event) => setMode(event.target.value as GameMode)}>
               <option value="classic">N-back</option>
-              <option value="recent-5">Упрощенный: среди 5 последних</option>
+              <option value="recent-5">Recent-5</option>
+              <option value="go-no-go">Go / No-Go</option>
+              <option value="reaction-time">Reaction Time</option>
+              <option value="stroop">Stroop Test</option>
             </select>
           </label>
+
+          {showNSelector && (
+            <label>
+              N ходов назад
+              <select value={n} onChange={(event) => setN(Number(event.target.value) as 2 | 3 | 4)}>
+                <option value={2}>2-back</option>
+                <option value={3}>3-back</option>
+                <option value={4}>4-back</option>
+              </select>
+            </label>
+          )}
+
+          {mode === "go-no-go" && (
+            <label>
+              Доля GO стимулов: {goRatio}%
+              <input max={90} min={40} onChange={(event) => setGoRatio(Number(event.target.value))} step={5} type="range" value={goRatio} />
+            </label>
+          )}
+
           <label>
-            N ходов назад
-            <select value={n} onChange={(event) => setN(Number(event.target.value) as 2 | 3 | 4)}>
-              <option value={2}>2-back</option>
-              <option value={3}>3-back</option>
-              <option value={4}>4-back</option>
-            </select>
-          </label>
-          <label>
-            Начальная скорость: {baseIntervalMs} мс
+            Базовая скорость: {baseIntervalMs} мс
             <input
               max={3000}
               min={600}
@@ -268,18 +378,29 @@ export default function GameClient() {
               value={baseIntervalMs}
             />
           </label>
+
           <label>
             Длина раунда
             <input max={90} min={12} onChange={(event) => setLength(Number(event.target.value))} type="number" value={length} />
           </label>
+
           <label className="check-row">
             <input checked={tournament} onChange={(event) => setTournament(event.target.checked)} type="checkbox" />
             Турнирный режим
           </label>
+
           <label className="check-row">
-            <input checked={useBot} onChange={(event) => setUseBot(event.target.checked)} type="checkbox" />
+            <input checked={useBot} disabled={rated} onChange={(event) => setUseBot(event.target.checked)} type="checkbox" />
             Добавить бота
           </label>
+
+          <label className="check-row">
+            <input checked={rated} onChange={(event) => setRated(event.target.checked)} type="checkbox" />
+            Rated lobby
+          </label>
+
+          {rated && <p className="field-hint">ELO changes after each finished game. Bots are disabled in rated matches.</p>}
+
           {useBot && (
             <label>
               Точность бота: {botAccuracy}%
@@ -304,21 +425,18 @@ export default function GameClient() {
             <HelpCircle size={18} />
             <h2>Как играть</h2>
           </div>
-          <p>N-back: нажимайте, если клетка совпала с клеткой N ходов назад.</p>
-          <p>Упрощенный режим: нажимайте, если клетка встречалась среди последних 5 ходов.</p>
-          <p>Верный ход подсвечивает клетку зеленым, ошибка со штрафом - красным, обычный стимул остается желтым.</p>
-          <p>После завершения хост может запустить следующий раунд или закрыть лобби.</p>
+          <p>N-back: нажимайте, если текущая клетка совпала с клеткой N ходов назад.</p>
+          <p>Go / No-Go: нажимайте только на GO, NO_GO нужно пропускать.</p>
+          <p>Reaction Time: ждите сигнала и кликайте как можно быстрее, фальстарт штрафуется.</p>
+          <p>Stroop: отвечайте по цвету слова, а не по его тексту.</p>
+          <p>Подробное руководство доступно на отдельной странице.</p>
         </div>
 
         <div className="round-list">
           {rounds.data?.map((round) => (
-            <button
-              className={round.id === activeRound?.id ? "round active" : "round"}
-              key={round.id}
-              onClick={() => setActiveRoundId(round.id)}
-            >
+            <button className={round.id === activeRound?.id ? "round active" : "round"} key={round.id} onClick={() => setActiveRoundId(round.id)}>
               <span>
-                {round.mode === "classic" ? `${round.n}-back` : "recent-5"}, {round.players.length}/4
+                {modeLabel(round.mode, round.n)}, {round.players.length}/4
               </span>
               <strong>{round.status}</strong>
             </button>
@@ -339,6 +457,9 @@ export default function GameClient() {
             <Link className="secondary link-button wide" href="/history">
               <History size={18} /> Открыть историю
             </Link>
+            <Link className="secondary link-button wide" href="/stats">
+              <Shield size={18} /> Rating
+            </Link>
           </div>
         </section>
       </aside>
@@ -350,12 +471,13 @@ export default function GameClient() {
               <div>
                 <h2>Раунд {activeRound.id.slice(0, 8)}</h2>
                 <p>
-                  {activeRound.mode === "classic" ? `${activeRound.n}-back` : "совпадение среди 5 последних"} · стимул{" "}
-                  {activeRound.stimulusIndex + 1}/{activeRound.length} · интервал {activeRound.currentIntervalMs} мс
+                  {modeLabel(activeRound.mode, activeRound.n)} · стимул {activeRound.stimulusIndex + 1}/{activeRound.length} · интервал{" "}
+                  {activeRound.currentIntervalMs} мс
                 </p>
                 <p>{activeRound.tournament ? "Турнирный формат." : "Обычный матч."}</p>
                 <p>{currentPlayer ? `Вы участвуете как ${currentPlayer.displayName}` : "Вы смотрите раунд, но еще не участвуете"}</p>
               </div>
+              <p>{activeRound.rated ? "Rated match: ELO will change after the game." : "Casual match: ELO does not change."}</p>
               <div className="button-row">
                 {activeRound.status === "lobby" && !currentPlayer && (
                   <button className="secondary" onClick={() => joinRound.mutate({ roundId: activeRound.id })}>
@@ -397,31 +519,28 @@ export default function GameClient() {
               </div>
             )}
 
-            <div className="grid" aria-label="Сетка стимулов 3 на 3">
-              {Array.from({ length: 9 }, (_, index) => (
-                <div
-                  className={[
-                    "cell",
-                    index === activeRound.currentPosition ? "lit" : "",
-                    feedbackFlash?.position === index ? `flash-${feedbackFlash.kind}` : ""
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  key={index}
-                />
-              ))}
-            </div>
+            <GameArena stimulus={currentStimulus} feedbackFlash={feedbackFlash} currentPosition={activeRound.currentPosition} />
 
-            <button className="match-button" disabled={!canAnswer || submit.isPending} onClick={handleSubmit}>
-              <Send size={20} /> Есть совпадение
-            </button>
+            {activeRound.status === "running" && renderControls(activeRound.mode, currentStimulus, canAnswer, submit.isPending, handleSubmit)}
 
             {!canAnswer && (
               <p className="notice">
-                {activeRound.status === "running" ? "Сначала войдите в раунд." : "Кнопка станет активной после старта раунда."}
+                {activeRound.status === "running" ? "Сначала войдите в раунд." : "Кнопки станут активны после старта раунда."}
               </p>
             )}
             {message && <p className="notice">{message}</p>}
+
+            {lastResult && (
+              <div className="status-strip">
+                Итог последнего стимула:{" "}
+                {lastResult.winners.length
+                  ? `лидер ${lastResult.players
+                      .filter((player: { userId: string }) => lastResult.winners.includes(player.userId))
+                      .map((player: { displayName: string }) => player.displayName)
+                      .join(", ")}`
+                  : "без победителя"}
+              </div>
+            )}
 
             <div className="scoreboard">
               {activeRound.players.map((player) => (
@@ -432,9 +551,16 @@ export default function GameClient() {
                     {player.userId === session.user.id ? " · вы" : ""}
                     {player.userId === activeRound.ownerId ? " · владелец" : ""}
                   </strong>
-                  <span>Верно: {player.correct}</span>
+                  <span>Очки: {player.correct}</span>
                   <span>Ошибки: {player.errors}</span>
                   <span>Штраф: {player.penalty}</span>
+                  <span>Accuracy: {player.metrics.accuracy}%</span>
+                  {player.metrics.averageReactionTime !== null && <span>Avg RT: {player.metrics.averageReactionTime} мс</span>}
+                  {player.metrics.bestReactionTime !== null && <span>Best RT: {player.metrics.bestReactionTime} мс</span>}
+                  {player.metrics.falseStarts > 0 && <span>Фальстарты: {player.metrics.falseStarts}</span>}
+                  {player.metrics.falsePositives > 0 && <span>False positives: {player.metrics.falsePositives}</span>}
+                  {player.metrics.misses > 0 && <span>Misses: {player.metrics.misses}</span>}
+                  {player.metrics.conflictErrors > 0 && <span>Conflict errors: {player.metrics.conflictErrors}</span>}
                 </div>
               ))}
             </div>
@@ -445,7 +571,7 @@ export default function GameClient() {
                 <p className="notice">Завершенных раундов в этом лобби пока нет.</p>
               ) : (
                 activeRound.history.map((entry, index) => {
-                  const winner = entry.players.find((player) => player.userId === entry.winnerUserId);
+                  const winner = entry.players.find((player: { userId: string }) => player.userId === entry.winnerUserId);
                   return (
                     <div className="history-block" key={entry.roundId}>
                       <div className="history-head">
@@ -454,10 +580,10 @@ export default function GameClient() {
                       </div>
                       <div className="history-table">
                         <span>Игрок</span>
-                        <span>Верно</span>
+                        <span>Очки</span>
                         <span>Ошибки</span>
                         <span>Штраф</span>
-                        {entry.players.map((player) => (
+                        {entry.players.map((player: { userId: string; displayName: string; isBot: boolean; correct: number; errors: number; penalty: number }) => (
                           <FragmentRow key={player.userId} player={player} />
                         ))}
                       </div>
@@ -475,15 +601,156 @@ export default function GameClient() {
   );
 }
 
+function GameArena({
+  stimulus,
+  feedbackFlash,
+  currentPosition
+}: {
+  stimulus: PublicStimulus;
+  feedbackFlash: FeedbackFlash;
+  currentPosition: number | null;
+}) {
+  if (!stimulus) {
+    return <div className="empty">Ожидание стимула.</div>;
+  }
+
+  if (stimulus.kind === "grid") {
+    return (
+      <div className="grid" aria-label="Сетка стимулов 3 на 3">
+        {Array.from({ length: 9 }, (_, index) => (
+          <div
+            className={[
+              "cell",
+              index === currentPosition ? "lit" : "",
+              feedbackFlash?.position === index ? `flash-${feedbackFlash.kind}` : ""
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            key={index}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (stimulus.kind === "go-no-go") {
+    return (
+      <div className={`stimulus-card ${stimulus.type === "GO" ? "go-card" : "nogo-card"}`}>
+        <TrafficCone size={28} />
+        <strong>{stimulus.type}</strong>
+        <span>{stimulus.type === "GO" ? "Нужно нажать" : "Нужно пропустить"}</span>
+      </div>
+    );
+  }
+
+  if (stimulus.kind === "reaction-time") {
+    return (
+      <div className={`stimulus-card ${stimulus.visible ? "react-card live" : "react-card"}`}>
+        <Timer size={28} />
+        <strong>{stimulus.visible ? "КЛИКАЙ" : "ЖДИТЕ СИГНАЛА"}</strong>
+        <span>{stimulus.visible ? "Сейчас идет окно реакции" : `Случайная задержка до ${stimulus.delayMs} мс`}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stimulus-card stroop-card">
+      <WholeWord size={28} />
+      <strong className={`stroop-word stroop-${stimulus.color}`}>{stimulus.word.toUpperCase()}</strong>
+      <span>{stimulus.congruent ? "Конгруэнтный стимул" : "Конфликтный стимул"}</span>
+    </div>
+  );
+}
+
+function renderControls(
+  mode: GameMode,
+  stimulus: PublicStimulus,
+  canAnswer: boolean,
+  isPending: boolean,
+  onSubmit: (answer?: string) => void
+) {
+  if (mode === "stroop") {
+    return (
+      <div className="stroop-buttons">
+        {STROOP_BUTTONS.map((button) => (
+          <button className="secondary color-button" disabled={!canAnswer || isPending || !stimulus?.visible} key={button.value} onClick={() => onSubmit(button.value)}>
+            {button.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  const label =
+    mode === "reaction-time" ? "Нажать как можно быстрее" : mode === "go-no-go" ? "Нажать" : "Есть совпадение";
+
+  return (
+    <button className="match-button" disabled={!canAnswer || isPending || !stimulus?.visible} onClick={() => onSubmit()}>
+      <Send size={20} /> {label}
+    </button>
+  );
+}
+
+function modeLabel(mode: GameMode, n: number) {
+  switch (mode) {
+    case "classic":
+      return `${n}-back`;
+    case "recent-5":
+      return "Recent-5";
+    case "go-no-go":
+      return "Go / No-Go";
+    case "reaction-time":
+      return "Reaction Time";
+    case "stroop":
+      return "Stroop Test";
+  }
+}
+
+function getAuthValidationError({
+  authMode,
+  email,
+  password,
+  confirmPassword,
+  name
+}: {
+  authMode: AuthMode;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  name: string;
+}) {
+  if (!email.trim()) {
+    return "Введите email или никнейм.";
+  }
+  if (!password.trim()) {
+    return "Введите пароль.";
+  }
+  if (authMode === "sign-up") {
+    if (name.trim().length < 3) {
+      return "Никнейм должен содержать не менее 3 символов.";
+    }
+    if (password.length < 8) {
+      return "Пароль должен содержать не менее 8 символов.";
+    }
+    if (password !== confirmPassword) {
+      return "Пароли не совпадают.";
+    }
+  }
+
+  return null;
+}
+
 export function TournamentMiniCard({ round, currentUserId }: { round: TournamentRound; currentUserId: string }) {
   const me = round.players.find((player) => player.userId === currentUserId);
   const winner = round.players.find((player) => player.userId === round.winnerUserId);
 
   return (
     <div className="tournament-mini">
-      <span>{round.mode === "classic" ? `${round.n}-back` : "recent-5"} · {round.finishedAt ? new Date(round.finishedAt).toLocaleDateString("ru-RU") : "завершен"}</span>
+      <span>
+        {modeLabel(round.mode, round.n)} · {round.finishedAt ? new Date(round.finishedAt).toLocaleDateString("ru-RU") : "завершен"}
+      </span>
       <span>Победитель: {winner?.displayName ?? "нет"}</span>
-      {me && <span>Ваше место: {me.place}, верно: {me.correct}</span>}
+      {me && <span>Ваше место: {me.place}, очки: {me.correct}</span>}
     </div>
   );
 }
@@ -494,13 +761,16 @@ export function TournamentTable({ round, currentUserId }: { round: TournamentRou
   return (
     <div className="history-block">
       <div className="history-head">
-        <strong>{round.mode === "classic" ? `${round.n}-back` : "recent-5"}{round.tournament ? " · турнир" : ""}</strong>
+        <strong>
+          {modeLabel(round.mode, round.n)}
+          {round.tournament ? " · турнир" : ""}
+        </strong>
         <span>Победитель: {winner?.displayName ?? "нет"}</span>
       </div>
       <div className="history-table tournament-table">
         <span>Место</span>
         <span>Игрок</span>
-        <span>Верно</span>
+        <span>Очки</span>
         <span>Ошибки</span>
         <span>Штраф</span>
         {round.players.map((player) => (
@@ -521,7 +791,10 @@ function FragmentTournamentRow({
   return (
     <>
       <span>{player.place}</span>
-      <span>{player.displayName}{player.userId === currentUserId ? " · вы" : ""}</span>
+      <span>
+        {player.displayName}
+        {player.userId === currentUserId ? " · вы" : ""}
+      </span>
       <span>{player.correct}</span>
       <span>{player.errors}</span>
       <span>{player.penalty}</span>

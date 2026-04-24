@@ -11,6 +11,32 @@
   --line: #343b46;
 }
 
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --panel-2: #eef2f8;
+  --text: #1d2430;
+  --muted: #5e6a7c;
+  --accent: #2acb88;
+  --accent-2: #f3b64a;
+  --danger: #ef5d6a;
+  --line: #d5dde8;
+}
+
+html[data-theme="lunar"] {
+  color-scheme: dark;
+  --bg: #0d1020;
+  --panel: #151b33;
+  --panel-2: #1f2748;
+  --text: #eff3ff;
+  --muted: #a9b3d6;
+  --accent: #90f0ff;
+  --accent-2: #ffd36e;
+  --danger: #ff7b93;
+  --line: #33406c;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -85,6 +111,29 @@ h2 {
   gap: 10px;
 }
 
+.theme-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.theme-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: #171a1f;
+}
+
+.theme-button.active {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 .metrics span {
   display: inline-flex;
   align-items: center;
@@ -121,6 +170,11 @@ h2 {
 .form-grid {
   display: grid;
   gap: 12px;
+}
+
+.field-hint {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 input,
@@ -348,6 +402,72 @@ input[type="range"] {
   font-size: 18px;
 }
 
+.stimulus-card {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  width: min(560px, 100%);
+  min-height: 320px;
+  margin: 0 auto 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 24px;
+  background: #15191f;
+  text-align: center;
+}
+
+.go-card strong,
+.nogo-card strong,
+.react-card strong,
+.stroop-card strong {
+  font-size: clamp(28px, 5vw, 56px);
+}
+
+.go-card {
+  border-color: rgba(66, 211, 146, 0.5);
+}
+
+.nogo-card {
+  border-color: rgba(255, 107, 107, 0.5);
+}
+
+.react-card.live {
+  border-color: var(--accent);
+  box-shadow: 0 0 34px rgba(66, 211, 146, 0.16);
+}
+
+.stroop-word {
+  letter-spacing: 0;
+}
+
+.stroop-red {
+  color: #ff6b6b;
+}
+
+.stroop-blue {
+  color: #6bb6ff;
+}
+
+.stroop-green {
+  color: #42d392;
+}
+
+.stroop-yellow {
+  color: #f5b84b;
+}
+
+.stroop-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.color-button {
+  min-height: 52px;
+}
+
 .status-strip {
   width: min(560px, 100%);
   margin: 0 auto 14px;
@@ -509,6 +629,10 @@ input[type="range"] {
   }
 
   .scoreboard {
+    grid-template-columns: 1fr;
+  }
+
+  .stroop-buttons {
     grid-template-columns: 1fr;
   }
 }

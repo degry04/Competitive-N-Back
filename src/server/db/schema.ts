@@ -4,6 +4,8 @@ export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
+  rating: integer("rating").notNull().default(1000),
+  rank: text("rank").notNull().default("Silver"),
   emailVerified: integer("email_verified", { mode: "boolean" }).notNull(),
   image: text("image"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
@@ -56,8 +58,9 @@ export const rounds = sqliteTable("rounds", {
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
   n: integer("n").notNull(),
-  mode: text("mode", { enum: ["classic", "recent-5"] }).notNull().default("classic"),
+  mode: text("mode", { enum: ["classic", "recent-5", "go-no-go", "reaction-time", "stroop"] }).notNull().default("classic"),
   tournament: integer("tournament", { mode: "boolean" }).notNull().default(false),
+  rated: integer("rated", { mode: "boolean" }).notNull().default(false),
   botAccuracy: integer("bot_accuracy"),
   length: integer("length").notNull(),
   baseIntervalMs: integer("base_interval_ms").notNull(),
@@ -67,6 +70,7 @@ export const rounds = sqliteTable("rounds", {
   startedAt: integer("started_at", { mode: "timestamp" }),
   finishedAt: integer("finished_at", { mode: "timestamp" }),
   winnerUserId: text("winner_user_id"),
+  ratingProcessed: integer("rating_processed", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull()
 });
 
@@ -97,6 +101,20 @@ export const responses = sqliteTable("responses", {
   expectedMatch: integer("expected_match", { mode: "boolean" }).notNull(),
   isCorrect: integer("is_correct", { mode: "boolean" }).notNull(),
   intervalAfterMs: integer("interval_after_ms").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull()
+});
+
+export const ratingHistory = sqliteTable("rating_history", {
+  id: text("id").primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  roundId: text("round_id")
+    .notNull()
+    .references(() => rounds.id, { onDelete: "cascade" }),
+  oldRating: integer("old_rating").notNull(),
+  newRating: integer("new_rating").notNull(),
+  change: integer("change").notNull(),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull()
 });
 
