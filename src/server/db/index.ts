@@ -5,16 +5,16 @@ import { dirname, resolve } from "node:path";
 import * as schema from "./schema";
 
 const databaseUrl = process.env.DATABASE_URL ?? "file:./data/nback.sqlite";
-const databasePath = resolve(databaseUrl.replace(/^file:/, ""));
+const sqlitePath = getLocalSqlitePath(databaseUrl);
 const isBuildPhase =
   process.env.NEXT_PHASE === "phase-production-build" || process.env.npm_lifecycle_event === "build";
 
-if (!isBuildPhase) {
-  mkdirSync(dirname(databasePath), { recursive: true });
+if (sqlitePath) {
+  mkdirSync(dirname(resolve(sqlitePath)), { recursive: true });
 }
 
 const sqlite = createClient({
-  url: databaseUrl.startsWith("file:") ? databaseUrl : `file:${databasePath}`
+  url: databaseUrl
 });
 
 if (!isBuildPhase) {
@@ -200,4 +200,16 @@ async function ensureLocalSchema(client: ReturnType<typeof createClient>) {
       )
     `);
   }
+}
+
+function getLocalSqlitePath(url: string) {
+  if (url.startsWith("file:")) {
+    return url.slice("file:".length);
+  }
+
+  if (!/^[a-z][a-z\d+.-]*:\/\//i.test(url)) {
+    return url;
+  }
+
+  return null;
 }

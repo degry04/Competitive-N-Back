@@ -22,13 +22,6 @@
       "when": 1777069800000,
       "tag": "0002_rating_system",
       "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1777050404936,
-      "tag": "0003_brown_blue_blade",
-      "breakpoints": true
     }
   ]
 }
