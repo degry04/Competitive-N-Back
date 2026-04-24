@@ -157,7 +157,7 @@ export const friendships = sqliteTable("friendships", {
   addresseeId: text("addressee_id")
     .notNull()
     .references(() => user.id, { onDelete: "cascade" }),
-  status: text("status", { enum: ["accepted"] }).notNull().default("accepted"),
+  status: text("status", { enum: ["pending", "accepted"] }).notNull().default("pending"),
   createdAt: integer("created_at", { mode: "timestamp" }).notNull()
 });
 

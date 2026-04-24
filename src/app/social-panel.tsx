@@ -29,6 +29,9 @@ export default function SocialPanel() {
   const friends = trpc.social.friends.useQuery(undefined, {
     refetchInterval: 3500
   });
+  const friendRequests = trpc.social.friendRequests.useQuery(undefined, {
+    refetchInterval: 3500
+  });
 
   const joinedRooms = rooms.data?.joined ?? [];
   const availableRooms = rooms.data?.available ?? [];
@@ -87,8 +90,29 @@ export default function SocialPanel() {
   const addFriend = trpc.social.addFriend.useMutation({
     onSuccess: () => {
       setFriendIdentifier("");
-      setNotice("Друг добавлен.");
+      setNotice("Заявка в друзья отправлена.");
       void friends.refetch();
+      void friendRequests.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
+  const acceptFriend = trpc.social.acceptFriend.useMutation({
+    onSuccess: () => {
+      setNotice("Заявка принята.");
+      void friends.refetch();
+      void friendRequests.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
+  const rejectFriend = trpc.social.rejectFriend.useMutation({
+    onSuccess: () => {
+      void friendRequests.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
+  const cancelFriendRequest = trpc.social.cancelFriendRequest.useMutation({
+    onSuccess: () => {
+      void friendRequests.refetch();
     },
     onError: (error) => setNotice(error.message)
   });
@@ -248,6 +272,42 @@ export default function SocialPanel() {
             <UserPlus size={16} />
           </button>
         </div>
+
+        {friendRequests.data?.incoming.length ? (
+          <div className="request-list">
+            <strong>Входящие заявки</strong>
+            {friendRequests.data.incoming.map((request) => (
+              <div className="friend-row" key={request.id}>
+                <Avatar src={request.image} name={request.name} small />
+                <span className="friend-name">{request.name}</span>
+                <div className="mini-actions">
+                  <button className="secondary" onClick={() => acceptFriend.mutate({ requestId: request.id })} type="button">
+                    Принять
+                  </button>
+                  <button className="secondary icon-only" onClick={() => rejectFriend.mutate({ requestId: request.id })} title="Отклонить" type="button">
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {friendRequests.data?.outgoing.length ? (
+          <div className="request-list">
+            <strong>Исходящие заявки</strong>
+            {friendRequests.data.outgoing.map((request) => (
+              <div className="friend-row" key={request.id}>
+                <Avatar src={request.image} name={request.name} small />
+                <span className="friend-name">{request.name}</span>
+                <button className="secondary icon-only" onClick={() => cancelFriendRequest.mutate({ requestId: request.id })} title="Отменить заявку" type="button">
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div className="friend-list">
           {friends.data?.length ? (
             friends.data.map((friend) => (

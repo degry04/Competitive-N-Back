@@ -164,7 +164,7 @@ export const socialRouter = router({
       })
       .from(friendships)
       .innerJoin(user, eq(user.id, friendships.requesterId))
-      .where(eq(friendships.addresseeId, ctx.session.user.id));
+      .where(and(eq(friendships.addresseeId, ctx.session.user.id), eq(friendships.status, "accepted")));
 
     const reverseRows = await db
       .select({
@@ -176,7 +176,7 @@ export const socialRouter = router({
       })
       .from(friendships)
       .innerJoin(user, eq(user.id, friendships.addresseeId))
-      .where(eq(friendships.requesterId, ctx.session.user.id));
+      .where(and(eq(friendships.requesterId, ctx.session.user.id), eq(friendships.status, "accepted")));
 
     return [
       ...rows.map((entry) => ({
@@ -222,17 +222,85 @@ export const socialRouter = router({
       )
       .limit(1);
 
-    if (!existing) {
-      await db.insert(friendships).values({
-        id: randomUUID(),
-        requesterId: ctx.session.user.id,
-        addresseeId: target.id,
-        status: "accepted",
-        createdAt: new Date()
-      });
+    if (existing) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Заявка уже отправлена или пользователь уже в друзьях." });
     }
 
+    await db.insert(friendships).values({
+      id: randomUUID(),
+      requesterId: ctx.session.user.id,
+      addresseeId: target.id,
+      status: "pending",
+      createdAt: new Date()
+    });
+
     return { friendId: target.id };
+  }),
+
+  friendRequests: protectedProcedure.query(async ({ ctx }) => {
+    const incoming = await db
+      .select({
+        id: friendships.id,
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        createdAt: friendships.createdAt
+      })
+      .from(friendships)
+      .innerJoin(user, eq(user.id, friendships.requesterId))
+      .where(and(eq(friendships.addresseeId, ctx.session.user.id), eq(friendships.status, "pending")))
+      .orderBy(desc(friendships.createdAt));
+
+    const outgoing = await db
+      .select({
+        id: friendships.id,
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        createdAt: friendships.createdAt
+      })
+      .from(friendships)
+      .innerJoin(user, eq(user.id, friendships.addresseeId))
+      .where(and(eq(friendships.requesterId, ctx.session.user.id), eq(friendships.status, "pending")))
+      .orderBy(desc(friendships.createdAt));
+
+    return {
+      incoming: incoming.map((request) => ({ ...request, createdAt: request.createdAt.toISOString() })),
+      outgoing: outgoing.map((request) => ({ ...request, createdAt: request.createdAt.toISOString() }))
+    };
+  }),
+
+  acceptFriend: protectedProcedure.input(z.object({ requestId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    const [request] = await db
+      .select({ id: friendships.id, requesterId: friendships.requesterId })
+      .from(friendships)
+      .where(and(eq(friendships.id, input.requestId), eq(friendships.addresseeId, ctx.session.user.id), eq(friendships.status, "pending")))
+      .limit(1);
+
+    if (!request) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Заявка не найдена." });
+    }
+
+    await db.update(friendships).set({ status: "accepted" }).where(eq(friendships.id, request.id));
+    return { friendId: request.requesterId };
+  }),
+
+  rejectFriend: protectedProcedure.input(z.object({ requestId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    await db
+      .delete(friendships)
+      .where(and(eq(friendships.id, input.requestId), eq(friendships.addresseeId, ctx.session.user.id), eq(friendships.status, "pending")));
+
+    return { requestId: input.requestId };
+  }),
+
+  cancelFriendRequest: protectedProcedure.input(z.object({ requestId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+    await db
+      .delete(friendships)
+      .where(and(eq(friendships.id, input.requestId), eq(friendships.requesterId, ctx.session.user.id), eq(friendships.status, "pending")));
+
+    return { requestId: input.requestId };
   }),
 
   removeFriend: protectedProcedure.input(z.object({ friendId: z.string().min(1) })).mutation(async ({ ctx, input }) => {
@@ -327,8 +395,8 @@ async function assertFriend(userId: string, friendId: string) {
     .from(friendships)
     .where(
       or(
-        and(eq(friendships.requesterId, userId), eq(friendships.addresseeId, friendId)),
-        and(eq(friendships.requesterId, friendId), eq(friendships.addresseeId, userId))
+        and(eq(friendships.requesterId, userId), eq(friendships.addresseeId, friendId), eq(friendships.status, "accepted")),
+        and(eq(friendships.requesterId, friendId), eq(friendships.addresseeId, userId), eq(friendships.status, "accepted"))
       )
     )
     .limit(1);

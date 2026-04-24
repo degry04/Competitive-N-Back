@@ -337,9 +337,20 @@ input[type="range"] {
 }
 
 .room-list,
-.friend-list {
+.friend-list,
+.request-list {
   display: grid;
   gap: 6px;
+}
+
+.request-list {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.request-list > strong {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .room-chip {
@@ -428,6 +439,17 @@ input[type="range"] {
 .friend-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.mini-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mini-actions .secondary {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
 }
 
 .friend-name {

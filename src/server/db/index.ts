@@ -251,7 +251,7 @@ async function ensureLocalSchema(client: ReturnType<typeof createClient>) {
         \`id\` text PRIMARY KEY NOT NULL,
         \`requester_id\` text NOT NULL,
         \`addressee_id\` text NOT NULL,
-        \`status\` text DEFAULT 'accepted' NOT NULL,
+        \`status\` text DEFAULT 'pending' NOT NULL,
         \`created_at\` integer NOT NULL,
         FOREIGN KEY (\`requester_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade,
         FOREIGN KEY (\`addressee_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
