@@ -375,6 +375,63 @@ input[type="range"] {
   color: var(--muted);
 }
 
+.room-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.edit-form {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.edit-form input {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+.secondary.small {
+  min-height: 34px;
+  width: 34px;
+  padding: 0;
+}
+
+.group-chat-builder {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: #111419;
+}
+
+.friend-picker {
+  display: grid;
+  gap: 6px;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.picker-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.picker-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-box {
   display: grid;
   gap: 8px;

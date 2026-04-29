@@ -1,9 +1,9 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/server/db";
-import { chatMembers, chatMessages, chatRooms, friendships, user } from "@/server/db/schema";
+import { chatMembers, chatMessages, chatRooms, directChatNames, friendships, user } from "@/server/db/schema";
 import { protectedProcedure, router } from "../trpc";
 
 const GLOBAL_ROOM_ID = "global";
@@ -55,6 +55,31 @@ export const socialRouter = router({
       .where(eq(chatMembers.userId, ctx.session.user.id))
       .orderBy(desc(chatMembers.joinedAt));
 
+    const directRoomIds = memberships.filter((room) => room.type === "direct").map((room) => room.roomId);
+    const directPartners = directRoomIds.length
+      ? await db
+          .select({
+            roomId: chatMembers.roomId,
+            partnerName: user.name
+          })
+          .from(chatMembers)
+          .innerJoin(user, eq(user.id, chatMembers.userId))
+          .where(and(inArray(chatMembers.roomId, directRoomIds), ne(chatMembers.userId, ctx.session.user.id)))
+      : [];
+    
+    const customDirectNames = directRoomIds.length
+      ? await db
+          .select({
+            roomId: directChatNames.roomId,
+            customName: directChatNames.customName
+          })
+          .from(directChatNames)
+          .where(and(inArray(directChatNames.roomId, directRoomIds), eq(directChatNames.userId, ctx.session.user.id)))
+      : [];
+    
+    const customNameByRoomId = new Map(customDirectNames.map((entry) => [entry.roomId, entry.customName]));
+    const directNameByRoomId = new Map(directPartners.map((partner) => [partner.roomId, `Чат с ${partner.partnerName}`]));
+    
     const joinedIds = new Set(memberships.map((room) => room.roomId));
     const allRooms = await db
       .select({
@@ -67,7 +92,11 @@ export const socialRouter = router({
       .orderBy(chatRooms.name);
 
     return {
-      joined: memberships.map((room) => ({ ...room, joined: true })),
+      joined: memberships.map((room) => ({
+        ...room,
+        name: customNameByRoomId.get(room.roomId) ?? directNameByRoomId.get(room.roomId) ?? room.name,
+        joined: true
+      })),
       available: allRooms.filter((room) => !joinedIds.has(room.roomId)).map((room) => ({ ...room, joined: false }))
     };
   }),
@@ -86,6 +115,37 @@ export const socialRouter = router({
         createdAt: now
       });
       await addMember(roomId, ctx.session.user.id, now);
+
+      return { roomId };
+    }),
+
+  createGroupRoom: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().trim().min(2).max(40),
+        friendIds: z.array(z.string().min(1)).min(1).max(10)
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const friendIds = [...new Set(input.friendIds)].filter((friendId) => friendId !== ctx.session.user.id);
+      if (friendIds.length === 0) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Выберите хотя бы одного друга." });
+      }
+
+      await Promise.all(friendIds.map((friendId) => assertFriend(ctx.session.user.id, friendId)));
+
+      const roomId = randomUUID();
+      const now = new Date();
+      await db.insert(chatRooms).values({
+        id: roomId,
+        name: input.name.trim(),
+        type: "room",
+        ownerId: ctx.session.user.id,
+        createdAt: now
+      });
+
+      await addMember(roomId, ctx.session.user.id, now);
+      await Promise.all(friendIds.map((friendId) => addMember(roomId, friendId, now)));
 
       return { roomId };
     }),
@@ -336,7 +396,83 @@ export const socialRouter = router({
     await addMember(directRoomId, ctx.session.user.id, now);
     await addMember(directRoomId, input.friendId, now);
     return { roomId: directRoomId };
-  })
+  }),
+
+  renameRoom: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.string().min(1),
+        name: z.string().trim().min(2).max(40)
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await assertMember(input.roomId, ctx.session.user.id);
+      const room = await getRoom(input.roomId);
+
+      if (room.type === "direct") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Используйте renameDirectChat для переименования личного чата."
+        });
+      }
+
+      if (room.type === "global") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Нельзя переименовать общий чат." });
+      }
+
+      await db.update(chatRooms).set({ name: input.name.trim() }).where(eq(chatRooms.id, input.roomId));
+      return { roomId: input.roomId, name: input.name.trim() };
+    }),
+
+  renameDirectChat: protectedProcedure
+    .input(
+      z.object({
+        roomId: z.string().min(1),
+        customName: z.string().trim().min(2).max(40).nullable()
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      await assertMember(input.roomId, ctx.session.user.id);
+      const room = await getRoom(input.roomId);
+
+      if (room.type !== "direct") {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Используйте renameRoom для переименования обычной комнаты."
+        });
+      }
+
+      const now = new Date();
+
+      if (input.customName === null) {
+        await db.delete(directChatNames).where(and(eq(directChatNames.roomId, input.roomId), eq(directChatNames.userId, ctx.session.user.id)));
+        return { roomId: input.roomId, customName: null };
+      }
+
+      const [existingName] = await db
+        .select({ id: directChatNames.id })
+        .from(directChatNames)
+        .where(and(eq(directChatNames.roomId, input.roomId), eq(directChatNames.userId, ctx.session.user.id)))
+        .limit(1);
+
+      if (existingName) {
+        await db
+          .update(directChatNames)
+          .set({ customName: input.customName.trim(), updatedAt: now })
+          .where(eq(directChatNames.id, existingName.id));
+      } else {
+        await db.insert(directChatNames).values({
+          id: randomUUID(),
+          roomId: input.roomId,
+          userId: ctx.session.user.id,
+          customName: input.customName.trim(),
+          createdAt: now,
+          updatedAt: now
+        });
+      }
+
+      return { roomId: input.roomId, customName: input.customName.trim() };
+    })
 });
 
 async function ensureGlobalRoom() {

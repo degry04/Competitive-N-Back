@@ -126,6 +126,19 @@ export const chatRooms = sqliteTable("chat_rooms", {
   createdAt: integer("created_at", { mode: "timestamp" }).notNull()
 });
 
+export const directChatNames = sqliteTable("direct_chat_names", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => chatRooms.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  customName: text("custom_name").notNull(),
+  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull()
+});
+
 export const chatMembers = sqliteTable("chat_members", {
   id: text("id").primaryKey(),
   roomId: text("room_id")

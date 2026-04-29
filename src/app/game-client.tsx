@@ -11,7 +11,6 @@ import {
   Radio,
   Send,
   Shield,
-  ShieldQuestion,
   Timer,
   TrafficCone,
   Trophy,
@@ -192,7 +191,6 @@ export default function GameClient() {
   const currentStimulus = (activeRound?.currentStimulus ?? null) as PublicStimulus;
   const lastResult = activeRound?.lastResult ?? null;
   const showNSelector = mode === "classic" || mode === "recent-5";
-  const isGridMode = activeRound?.mode === "classic" || activeRound?.mode === "recent-5";
   const authValidationError = getAuthValidationError({ authMode, email, password, confirmPassword, name });
 
   useEffect(() => {

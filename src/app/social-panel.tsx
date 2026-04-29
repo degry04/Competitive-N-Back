@@ -1,6 +1,6 @@
 "use client";
 
-import { DoorOpen, MessageCircle, Plus, Send, Smile, UserPlus, Users, X } from "lucide-react";
+import { DoorOpen, MessageCircle, Pencil, Plus, Send, Smile, UserPlus, Users, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { trpc } from "@/trpc/client";
 
@@ -14,13 +14,16 @@ type Room = {
 };
 
 export default function SocialPanel() {
-  const utils = trpc.useUtils();
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [roomName, setRoomName] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
   const [message, setMessage] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [friendIdentifier, setFriendIdentifier] = useState("");
   const [notice, setNotice] = useState("");
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   const profile = trpc.social.me.useQuery();
   const rooms = trpc.social.rooms.useQuery(undefined, {
@@ -33,8 +36,8 @@ export default function SocialPanel() {
     refetchInterval: 3500
   });
 
-  const joinedRooms = rooms.data?.joined ?? [];
-  const availableRooms = rooms.data?.available ?? [];
+  const joinedRooms = useMemo(() => rooms.data?.joined ?? [], [rooms.data?.joined]);
+  const availableRooms = useMemo(() => rooms.data?.available ?? [], [rooms.data?.available]);
   const activeRoom = useMemo(
     () => joinedRooms.find((room) => room.roomId === activeRoomId) ?? joinedRooms[0] ?? null,
     [activeRoomId, joinedRooms]
@@ -60,6 +63,15 @@ export default function SocialPanel() {
     onSuccess: ({ roomId }) => {
       setActiveRoomId(roomId);
       setRoomName("");
+      void rooms.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
+  const createGroupRoom = trpc.social.createGroupRoom.useMutation({
+    onSuccess: ({ roomId }) => {
+      setActiveRoomId(roomId);
+      setGroupName("");
+      setSelectedFriendIds([]);
       void rooms.refetch();
     },
     onError: (error) => setNotice(error.message)
@@ -130,6 +142,24 @@ export default function SocialPanel() {
     },
     onError: (error) => setNotice(error.message)
   });
+  const renameRoom = trpc.social.renameRoom.useMutation({
+    onSuccess: () => {
+      setNotice("Комната переименована.");
+      setEditingRoomId(null);
+      setEditingName("");
+      void rooms.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
+  const renameDirectChat = trpc.social.renameDirectChat.useMutation({
+    onSuccess: () => {
+      setNotice("Чат переименован.");
+      setEditingRoomId(null);
+      setEditingName("");
+      void rooms.refetch();
+    },
+    onError: (error) => setNotice(error.message)
+  });
 
   function handleSend() {
     if (!activeRoom || !message.trim()) {
@@ -143,9 +173,37 @@ export default function SocialPanel() {
       return "Общий чат";
     }
     if (room.type === "direct") {
-      return "Личные сообщения";
+      return room.name;
     }
     return room.name;
+  }
+
+  function toggleGroupFriend(friendId: string) {
+    setSelectedFriendIds((current) =>
+      current.includes(friendId) ? current.filter((entry) => entry !== friendId) : [...current, friendId]
+    );
+  }
+
+  function startEditing(room: Room) {
+    setEditingRoomId(room.roomId);
+    setEditingName(room.name);
+  }
+
+  function saveEditing() {
+    if (!editingRoomId || !editingName.trim()) {
+      return;
+    }
+    const activeRoom = joinedRooms.find((r) => r.roomId === editingRoomId);
+    if (activeRoom?.type === "direct") {
+      renameDirectChat.mutate({ roomId: editingRoomId, customName: editingName.trim() });
+    } else {
+      renameRoom.mutate({ roomId: editingRoomId, name: editingName.trim() });
+    }
+  }
+
+  function cancelEditing() {
+    setEditingRoomId(null);
+    setEditingName("");
   }
 
   return (
@@ -187,16 +245,74 @@ export default function SocialPanel() {
           </button>
         </div>
 
+        <div className="group-chat-builder">
+          <input onChange={(event) => setGroupName(event.target.value)} placeholder="Название группового чата" value={groupName} />
+          <div className="friend-picker">
+            {friends.data?.length ? (
+              friends.data.map((friend) => (
+                <label className="picker-row" key={friend.friendId}>
+                  <input
+                    checked={selectedFriendIds.includes(friend.friendId)}
+                    onChange={() => toggleGroupFriend(friend.friendId)}
+                    type="checkbox"
+                  />
+                  <span>{friend.name}</span>
+                </label>
+              ))
+            ) : (
+              <p className="field-hint">Для группового чата сначала добавьте друзей.</p>
+            )}
+          </div>
+          <button
+            className="secondary wide"
+            disabled={!groupName.trim() || selectedFriendIds.length === 0}
+            onClick={() => createGroupRoom.mutate({ name: groupName, friendIds: selectedFriendIds })}
+            type="button"
+          >
+            <Plus size={16} /> Создать групповой чат
+          </button>
+        </div>
+
         <div className="room-list">
           {joinedRooms.map((room) => (
-            <button
-              className={activeRoom?.roomId === room.roomId ? "room-chip active" : "room-chip"}
-              key={room.roomId}
-              onClick={() => setActiveRoomId(room.roomId)}
-              type="button"
-            >
-              {roomTitle(room)}
-            </button>
+            <div key={room.roomId} className="room-item">
+              {editingRoomId === room.roomId ? (
+                <div className="edit-form">
+                  <input
+                    onChange={(event) => setEditingName(event.target.value)}
+                    placeholder="Новое название"
+                    value={editingName}
+                    autoFocus
+                  />
+                  <button className="primary icon-only" onClick={saveEditing} title="Сохранить" type="button">
+                    <Send size={14} />
+                  </button>
+                  <button className="secondary icon-only" onClick={cancelEditing} title="Отмена" type="button">
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <button
+                    className={activeRoom?.roomId === room.roomId ? "room-chip active" : "room-chip"}
+                    onClick={() => setActiveRoomId(room.roomId)}
+                    type="button"
+                  >
+                    {roomTitle(room)}
+                  </button>
+                  {room.type !== "global" && (
+                    <button
+                      className="secondary icon-only small"
+                      onClick={() => startEditing(room)}
+                      title="Переименовать"
+                      type="button"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           ))}
           {availableRooms.map((room) => (
             <button className="room-chip muted" key={room.roomId} onClick={() => joinRoom.mutate({ roomId: room.roomId })} type="button">

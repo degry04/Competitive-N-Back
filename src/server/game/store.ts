@@ -14,7 +14,6 @@ import {
   submitMatch,
   type GameMode,
   type GameRound,
-  type GoNoGoType,
   type PlayerState,
   type Stimulus
 } from "./nback";

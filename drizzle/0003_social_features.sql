@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS `chat_members` (
 	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS `direct_chat_names` (
+	`id` text PRIMARY KEY NOT NULL,
+	`room_id` text NOT NULL,
+	`user_id` text NOT NULL,
+	`custom_name` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`room_id`) REFERENCES `chat_rooms`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `chat_messages` (
 	`id` text PRIMARY KEY NOT NULL,
 	`room_id` text NOT NULL,

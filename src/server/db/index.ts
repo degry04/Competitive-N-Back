@@ -230,6 +230,22 @@ async function ensureLocalSchema(client: ReturnType<typeof createClient>) {
     tableNames.add("chat_members");
   }
 
+  if (!tableNames.has("direct_chat_names")) {
+    await client.execute(`
+      CREATE TABLE \`direct_chat_names\` (
+        \`id\` text PRIMARY KEY NOT NULL,
+        \`room_id\` text NOT NULL,
+        \`user_id\` text NOT NULL,
+        \`custom_name\` text NOT NULL,
+        \`created_at\` integer NOT NULL,
+        \`updated_at\` integer NOT NULL,
+        FOREIGN KEY (\`room_id\`) REFERENCES \`chat_rooms\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+        FOREIGN KEY (\`user_id\`) REFERENCES \`user\`(\`id\`) ON UPDATE no action ON DELETE cascade
+      )
+    `);
+    tableNames.add("direct_chat_names");
+  }
+
   if (!tableNames.has("chat_messages")) {
     await client.execute(`
       CREATE TABLE \`chat_messages\` (
